@@ -1,2 +1,5 @@
+v1.002 1999-08-11  Dominique Dumont  <domi@barrayar.grenoble.hp.com>
 
+	* lib/VcsTools/RcsAgent.pm (new): 
+	- fix bug with new version of RCS (diffrent log file)
 

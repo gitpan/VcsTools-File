@@ -7,6 +7,9 @@ perform a lot of functions to a Vcs file :
 - keep a cache in a MLDBM file so that a history retrieve is not necessary
   each time you start the tool.
 
+Suggested DSLI line:
+VcsTools::File bdpO VCS file management tools             DDUMONT
+
 
 Note that only HP HMS and RCS are currently implemented. See below to
 port VcsTools to another VCS system.

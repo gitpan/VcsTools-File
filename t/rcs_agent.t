@@ -63,7 +63,7 @@ print "ok ",$idx++,"\n";
 my $res ;
 
 warn "normal error below\n";
-$res = $h -> checkArchive() ;
+$res = $h -> checkArchive(revision => undef) ;
 print "not " if defined $res;
 print "ok ",$idx++,"\n";
 
@@ -71,18 +71,21 @@ open(FILE,">$file") || die "open file failed\n";
 print FILE "# \$Revision\$\nDummy text\n";
 close FILE ;
 
+print "create\n" if $trace ;
 $res = $h -> create();
 warn "@$res\n" if $trace;
 print "not " unless defined $res;
 print "not " if -w $file;
 print "ok ",$idx++,"\n";
 
+print "getHistory\n" if $trace ;
 $res = $h -> getHistory() ;
 warn join("\n",@$res),"\n" if $trace;
 print "not " unless defined $res;
 print "not " if -w $file;
 print "ok ",$idx++,"\n";
 
+print "changeLock to 1\n" if $trace ;
 # this will chmod the file to rw
 $res = $h -> changeLock(lock => 1,revision => '1.1' ) ;
 warn join("\n",@$res),"\n" if $trace;
@@ -91,6 +94,7 @@ print "not " unless defined $res ;
 
 print "ok ",$idx++,"\n";
 
+print "changeLock to 0\n" if $trace ;
 # this will NOT chmod the file back to r
 $res = $h -> changeLock(lock => 0,revision => '1.1' ) ;
 warn join("\n",@$res),"\n" if $trace;
@@ -99,20 +103,24 @@ print "ok ",$idx++,"\n";
 
 chmod 0444,$file;
 
+print "checkOut 1.1\n" if $trace ;
 $res = $h -> checkOut(revision => '1.1', lock => 1) ;
 warn join("\n",@$res),"\n" if $trace;
 print "not " unless defined $res ;
 print "ok ",$idx++,"\n";
 
-$res = $h -> checkArchive() ;
+print "checkArchive\n" if $trace ;
+$res = $h -> checkArchive(revision => 1.1) ;
+warn $h->error unless defined $res;
 print "not " unless defined $res;
-print "not " unless defined $res->[0] ;
+print "not " unless defined $res->[0] && $res->[0] eq '1.1';
 print "ok ",$idx++,"\n";
 
 open(FILE,">>$file") || die "open file failed\n";
 print FILE "\nMore Dummy text\n";
 close FILE ;
 
+print "checkIn 1.2\n" if $trace ;
 $res = $h -> checkIn
   (
    revision => '1.2',
@@ -122,12 +130,14 @@ warn join("\n",@$res),"\n" if $trace;
 print "not " unless defined $res ;
 print "ok ",$idx++,"\n";
 
+print "getHistory\n" if $trace ;
 $res = $h -> getHistory() ;
 warn join("\n",@$res),"\n" if $trace;
 print "not " unless defined $res;
 print "not " if -w $file;
 print "ok ",$idx++,"\n";
 
+print "getContent\n" if $trace ;
 $res = $h -> getContent(revision => '1.1') ;
 warn join("\n",@$res),"\n" if $trace;
 print "not " 
@@ -146,6 +156,7 @@ print "ok ",$idx++,"\n";
 #print "not " unless scalar grep (/new dummy/,@$res) == 1;
 #print "ok ",$idx++,"\n";
 
+print "showDiff\n" if $trace ;
 $res = $h -> showDiff(rev1 => '1.1', rev2 => '1.2') ;
 warn join("\n",@$res),"\n" if $trace;
 print "not " unless defined $res;
@@ -159,8 +170,10 @@ print "not " unless index(join("\n",@$res),
 > More Dummy text');
 print "ok ",$idx++,"\n";
 
-$res = $h -> checkArchive() ;
+print "checkArchive\n" if $trace ;
+$res = $h -> checkArchive(revision => '1.2') ;
 warn "@$res\n" if $trace;
-print "not " unless defined $res;
+print "Not " unless defined $res;
+print "not " if defined $res->[1];
 print "ok ",$idx++,"\n";
 

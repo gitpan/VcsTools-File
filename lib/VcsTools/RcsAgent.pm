@@ -8,7 +8,7 @@ use String::ShellQuote ;
 use VcsTools::Process ;
 use AutoLoader qw/AUTOLOAD/ ;
 
-$VERSION = sprintf "%d.%03d", q$Revision: 1.1 $ =~ /(\d+)\.(\d+)/;
+$VERSION = sprintf "%d.%03d", q$Revision: 1.2 $ =~ /(\d+)\.(\d+)/;
 
 # must pass the info data structure when creating it
 # 1 instance per file object.
@@ -32,6 +32,7 @@ sub new
         $self->{$_} = delete $args{$_} ;
       }
 
+    $self->{workDir} .= '/' unless $self->{workDir} =~ m!/$! ;
     $self->{fullName} = $self->{name} ;
 
     bless $self,$type ;
@@ -168,9 +169,19 @@ of the command.
 
 =head2 checkArchive()
 
-Check if the state of the archive.
+Check the state of the archive with respect to the passed revision. 
 
-Returns an array ref made of [$rev,undef,$time] or undef in case of problems.
+Parameters are :
+
+=over 4
+
+=item *
+
+revision: revision number of the user's working file. May be undef.
+
+=back
+
+Returns an array ref made of [$rev,$locker,$time] or undef in case of problems.
 
 =over 4
 
@@ -181,13 +192,13 @@ time)
 
 =item *
 
-if the file is locked $locker returns the name of the locker, 'unlocked'
-otherwise.
+if the revision the the user is working is locked, $locker returns the
+name of the locker, 'unlocked' otherwise.
 
 =item *
 
-$revision the revision number of the locked file. Is undef is the file is
-not locked.
+$revision is there for historical reasons. It returns the revision number 
+of the user's working file if this rev is locked. Is undef otherwise.
 
 =back
 
@@ -408,10 +419,15 @@ sub checkArchive
     my $self = shift ;
     my %args = @_ ;
 
-    $self->printDebug("checking archive of $self->{name}\n");
+    unless (exists $args{revision})
+      {
+        carp "No revision parameter passed to checkArchive\n";
+      }
 
-    my $rcsFile = -d $self->{workDir} . 'RCS' ? "RCS/" : '' . 
-      $self->{fullName}.',v' ;
+    my $rcsFile = -d $self->{workDir} . 'RCS' ? "RCS/" : '' ;
+    $rcsFile .= $self->{fullName}.',v' ;
+
+    $self->printDebug("checking archive of $self->{name} ($rcsFile)\n");
 
     my $run ;
     if ($self->{test})
@@ -419,6 +435,17 @@ sub checkArchive
         $run = "Running stat on $rcsFile\n";
       }
 
+    unless (-e $rcsFile)
+      {
+        $self->{lastError}="RCS archive file $rcsFile does not exists\n";
+        return undef;
+      }
+
+    my $st = stat($rcsFile) or die "Internal error:No $rcsFile: $!";
+    my $mtime = $st->mtime ;
+    
+    return [undef,undef,$mtime] unless defined $args{revision} ;
+    
     $run = "rlog $self->{fullName}";
 
     return $run if $self->{test};
@@ -434,12 +461,15 @@ sub checkArchive
       {
         foreach my $line (@$result)
           {
-            if ($line =~ /^-+$/ or $line =~ /locks: *(\w+): ([\d\.]+)/)
+            if ($line =~ /^revision +([\d\.]+)\s+locked by: *(\w+)/)
               {
-                #print "line is $line\nlocker $1, rev $2\n";
-                return [$2,$1,stat($self->{fullName})->mtime];
+                print "line is $line\nlocker $1, rev $2\n";
+                return [$1,$2,stat($self->{fullName})->mtime] 
+                  if $1 eq $args{revision};
               };
           }
+        return [undef,undef,stat($self->{fullName})->mtime];
+        
       }
     else
       {

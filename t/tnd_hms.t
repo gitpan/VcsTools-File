@@ -64,7 +64,7 @@ print "ok ",$idx++,"\n";
 my $res ;
 
 warn "normal error below\n";
-$res = $h -> checkArchive() ;
+$res = $h -> checkArchive(revision => undef) ;
 print "not " if defined $res;
 print "ok ",$idx++,"\n";
 
@@ -156,8 +156,9 @@ print "not " unless join("\n",@$res) eq
 > More Dummy text';
 print "ok ",$idx++,"\n";
 
-$res = $h -> checkArchive() ;
+$res = $h -> checkArchive(revision => '1.3') ;
 warn "@$res\n" if $trace;
 print "not " unless defined $res;
+print "not " if defined $res->[0];
 print "ok ",$idx++,"\n";
 

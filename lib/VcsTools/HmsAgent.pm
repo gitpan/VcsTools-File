@@ -7,7 +7,7 @@ use String::ShellQuote ;
 use VcsTools::Process ;
 use AutoLoader qw/AUTOLOAD/ ;
 
-$VERSION = sprintf "%d.%03d", q$Revision: 1.2 $ =~ /(\d+)\.(\d+)/;
+$VERSION = sprintf "%d.%03d", q$Revision: 1.3 $ =~ /(\d+)\.(\d+)/;
 
 # must pass the info data structure when creating it
 # 1 instance per file object.
@@ -199,7 +199,17 @@ of the command.
 
 =head2 checkArchive()
 
-Check if the state of the archive.
+Check the state of the archive with respect to the passed revision. 
+
+Parameters are :
+
+=over 4
+
+=item *
+
+revision: revision number of the user's working file. May be undef.
+
+=back
 
 Returns an array ref made of [$rev,$locker,$time] or undef in case of problems.
 
@@ -212,13 +222,13 @@ time)
 
 =item *
 
-if the file is locked $locker returns the name of the locker, 'unlocked'
-otherwise.
+if the revision the the user is working on is locked, $locker returns the
+name of the locker, 'unlocked' otherwise.
 
 =item *
 
-$revision the revision number of the locked file. Is undef is the file is
-not locked.
+$revision is there for historical reasons. It is set to the revision number 
+of the user's working file if this revision is locked. set to undef otherwise.
 
 =back
 
@@ -439,6 +449,11 @@ sub checkArchive
     my $self = shift ;
     my %args = @_ ;
 
+    unless (exists $args{revision})
+      {
+        carp "No revision parameter passed to checkArchive\n";
+      }
+
     $self->printDebug("checking archive of $self->{name}\n");
 
     my $run = "fll -N $self->{hostOption} ". $self->{fullName} ;
@@ -452,14 +467,19 @@ sub checkArchive
        command => $run
       );
 
-    my $rev ;
-    my $locker ;
-
     if (defined $result)
       {
         my ($mode,$locker,$size,$time,$name,$rev) = 
           split (/[\s\[\]]+/, shift @$result) ;
-        return [$rev,$locker,$time];
+        if (defined $args{revision} and defined $rev and 
+            $args{revision} eq $rev)
+          {
+            return [$rev,$locker,$time];
+          }
+        else
+          {
+            return [undef,undef,$time] ;
+          }
       }
     else
       {

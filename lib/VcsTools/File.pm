@@ -8,7 +8,7 @@ use Storable ;
    
 use AutoLoader qw/AUTOLOAD/ ;
 
-$VERSION = sprintf "%d.%03d", q$Revision: 1.2 $ =~ /(\d+)\.(\d+)/;
+$VERSION = sprintf "%d.%03d", q$Revision: 1.3 $ =~ /(\d+)\.(\d+)/;
 
 
 ## Generic part
@@ -174,7 +174,7 @@ L<Storable> file (within a .store directory)
 
 =head1 CAVEATS
 
-The file B<must> contain the C<$Revision: 1.2 $> VCS keyword.
+The file B<must> contain the C<$Revision: 1.3 $> VCS keyword.
 
 The VCS agent (hmsAgent) creation is clumsy. I should use translucent
 attributes or stuff like that like Tom Christiansen described. In
@@ -236,7 +236,7 @@ vcsArgs: hash ref of parameter to pass to L<VcsTools::HmsAgent/"new(...)">
 Checks r/w permission of the local file, the revision of the local file 
 and lock state of the file.
 
-The file must contain the C<$Revision: 1.2 $> keyword.
+The file must contain the C<$Revision: 1.3 $> keyword.
 
 =head1 History handling methods
 
@@ -366,8 +366,9 @@ Create the VCS interface class.
 
 =head2 checkArchive()
 
-Delegated to the VCS interface
-class. E.g. L<VcsTools::HmsAgent/"checkArchive()">
+Calls checkArchive of the VCS interface
+class. (E.g. L<VcsTools::HmsAgent/"checkArchive()">) with the working
+revision as the revision parameter..
 
 =head2 changeLock(...)
 
@@ -566,16 +567,17 @@ sub lockIs
   
 sub getModeRef
   {
-    my $self = shift ;
-    
-    return $self->{fileMode} ;
+    return shift->{fileMode} ;
   }
 
 sub getStatusRef
   {
-    my $self = shift ;
-    
-    return $self->{status} ;
+    return shift->{status} ;
+  }
+
+sub getArchiveRef
+  {
+    return shift->{archive} ;
   }
 
 #sub createArchive
@@ -719,7 +721,7 @@ sub getRevision
     $self->{body}->printDebug("Extracting Rev from file\n");
     my $res = $self->{fileAgent}-> getRevision();
 
-    if (defined $res)
+    if (defined $res and $res ne '0')
       {
         $self->{body}->printEvent("Found revision $res\n");
         $self->{fileMode}{revision} = $res ;
@@ -728,7 +730,7 @@ sub getRevision
       {
         $self->{body}->printEvent($self->{fileAgent}->error()) ;
         # this is a major error where VCS is concerned.
-        croak "Can't extract revision from file $self->{name}"
+        croak "Can't extract revision from file $self->{name}. Is \$Revision\$ missing?"
       }
 
     return $res ;
@@ -963,12 +965,14 @@ sub checkArchive
     my $self = shift ;
     my %args = @_ ;
     $self->createVcsAgent() unless defined $self->{vcsAgent} ;
-    my $result = $self->{vcsAgent}->checkArchive();
+    my $result = $self->{vcsAgent}->
+      checkArchive(revision => $self->{fileMode}{revision});
     
     if (defined $result)
       {
         my ($rev, $locker,$time) = @$result ;
     
+        $self->{body}->printEvent("Archive found") ;
         $self->lockIs($rev,$locker);
         $self->{archive}{exists}=1;
         $self->{archive}{timeModified}=$time;

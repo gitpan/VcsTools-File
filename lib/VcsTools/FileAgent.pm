@@ -8,7 +8,7 @@ use strict;
 use vars qw($VERSION);
 use AutoLoader qw/AUTOLOAD/ ;
 
-$VERSION = sprintf "%d.%03d", q$Revision: 1.3 $ =~ /(\d+)\.(\d+)/;
+$VERSION = sprintf "%d.%03d", q$Revision: 1.4 $ =~ /(\d+)\.(\d+)/;
 
 sub new
   {
@@ -155,7 +155,9 @@ the file lines
 
 =head2 getRevision()
 
-Will read the content of the file and return the revision number..
+Will read the content of the file and return the revision number. Return 0
+of the $Revision: 1.4 $ keyword is present in the file but not set by the 
+VCS system.
 
 =head2 stat()
 
@@ -328,15 +330,22 @@ sub getRevision
     my %args = @_ ;
 
     warn "Extracting Revision from $self->{name}\n" if $self->{trace};
-    my $ref = $self-> readFile(@_);
+    my $f = $self->makeFullName(@_);
 
-    return undef unless defined $ref;
-
-    my $localRev ;
-    foreach  (@$ref)
+    unless (open(FIN,"$f") )
       {
+        $self->{lastError}="open $f failed:$!";
+        return undef;
+      }
+
+    my $localRev = '0' ;
+    while  (<FIN>)
+      {
+        last if /\$Revision\s*\$/;
         last if (($localRev)= /\$Revision: ([\d\.]+)/) ;
       }
+
+    close FIN;
 
     return $localRev ;
   }

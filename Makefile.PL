@@ -4,7 +4,7 @@ use ExtUtils::MakeMaker;
 WriteMakefile
   (
    'NAME'	   => 'VcsTools-File',
-   'VERSION' => '1.001',
+   'VERSION' => '1.002',
    'dist' => {COMPRESS=>'gzip -9f', SUFFIX => 'gz'},
    ($] >= 5.005 ?
     (ABSTRACT   => 'VCS file management tools',

@@ -97,16 +97,19 @@ print "ok ",$idx++,"\n";
 
 my $res;
 
+print "create file\n" if $trace ;
 open(FILE,">$file") || die "open file failed\n";
 print FILE "# \$Revision\$\nDummy text\n";
 close FILE ;
 print "ok ",$idx++,"\n";
 
+print "create archiveFile\n" if $trace ;
 $res = $vf -> archiveFile();
 print "not " unless defined $res;
 print "not " if -w $file;
 print "ok ",$idx++,"\n";
 
+print "check out 1.1\n" if $trace ;
 $res = $vf-> checkOut(revision => '1.1', lock => 1) ;
 warn join("\n",@$res),"\n" if $trace;
 print "not " unless defined $res ;
@@ -122,6 +125,7 @@ print FILE "Dummy text for 1.1 -> 1.2\n";
 close FILE ;
 print "ok ",$idx++,"\n";
 
+print "check in 1.2\n" if $trace ;
 $res = $vf -> archiveFile(info =>{log => 'dummy log for 1.2'});
 print "not " unless defined $res;
 print "not " if -w $file;
@@ -131,6 +135,7 @@ $res = $vf-> checkError() ;
 print "enot " unless defined $res && $res;
 print "ok ",$idx++,"\n";
 
+print "check out 1.1\n" if $trace ;
 $res = $vf-> checkOut(revision => '1.1', lock => 1) ;
 warn join("\n",@$res),"\n" if $trace;
 print "not " unless defined $res ;
@@ -146,6 +151,7 @@ print FILE "Dummy text for 1.1 -> 1.1.1.1\n";
 close FILE ;
 print "ok ",$idx++,"\n";
 
+print "check in 1.1.1.1\n" if $trace ;
 $res = $vf -> archiveFile(info =>{log => 'dummy log for 1.1.1.1'});
 print "not " unless defined $res;
 print "not " if -w $file;
@@ -155,6 +161,7 @@ $res = $vf-> checkError() ;
 print "not " unless defined $res && $res;
 print "ok ",$idx++,"\n";
 
+print "showdiff 1.1 1.2\n" if $trace ;
 $res = $vf -> showDiff(rev1 => '1.1', rev2 => '1.2');
 #print join("\n",@$res) ;
 print "not " unless defined $res and index(join("\n",@$res),
@@ -167,6 +174,8 @@ print "not " unless defined $res and index(join("\n",@$res),
 print "not " unless defined $res;
 print "ok ",$idx++,"\n";
 
+
+print "writeRevContent revision => '1.1'\n" if $trace ;
 $res = $vf -> writeRevContent(revision => '1.1', fileName => 'toto.txt');
 print "not " unless defined $res;
 print "ok ",$idx++,"\n";
@@ -182,7 +191,7 @@ else
   }
 print "ok ",$idx++,"\n";
 
-
+print "setUpMerge\n" if $trace ;
 $res = $vf -> setUpMerge(ancestor => '1.1', below => '1.2', other => '1.1.1.1');
 print "not " unless defined $res;
 print "ok ",$idx++,"\n";
@@ -194,6 +203,7 @@ print "ok ",$idx++,"\n";
 print "not " unless (-e 'v1.1_dummy.txt' and -e 'v1.1.1.1_dummy.txt');
 print "ok ",$idx++,"\n";
 
+print "mergeCleanup\n" if $trace ;
 $res = $vf-> mergeCleanup() ;
 print "not " if (-e 'v1.1_dummy.txt' or -e 'v1.1.1.1_dummy.txt');
 print "ok ",$idx++,"\n";

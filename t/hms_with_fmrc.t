@@ -58,7 +58,7 @@ print "not "
   unless $res eq 'fco -p -r1.52  dummy.txt';
 print "ok ",$idx++,"\n";
 
-$res = $h -> checkArchive() ;
+$res = $h -> checkArchive(revision => '1.51.1.1') ;
 warn $res,"\n" if $trace;
 print "not " 
   unless $res eq 'fll -N  dummy.txt';

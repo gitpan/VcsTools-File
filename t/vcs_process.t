@@ -45,7 +45,7 @@ print "ok ",$idx++,"\n";
 
 $res = mySystem
   (
-   command => 'echo >/dev/console',
+   command => 'echo "Dummy string printed on STDOUT"',
    trace => $trace,
   );
 
