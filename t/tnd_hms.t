@@ -65,13 +65,14 @@ unless (-d $dir)
     mkpath($dir,1,0755) or die "can't mkpath $dir";
   }
 
+VcsTools::HmsAgent->hmsHost('hptnofs') ;
+VcsTools::HmsAgent->hmsDir($dir) ;
+VcsTools::HmsAgent->hmsBase('test_integ') ;
+VcsTools::HmsAgent->trace($trace);
+
 my $h = new VcsTools::HmsAgent 
   (
-   hmsBase => 'test_integ',
-   hmsDir => $dir,
-   hmsHost => 'hptnofs',
    name => $file,
-   trace => $trace,
    workDir => $dir
   );
 

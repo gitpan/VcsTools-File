@@ -6,7 +6,7 @@
 # Change 1..1 below to 1..last_test_to_print .
 # (It may become useful if the test is moved to ./t subdirectory.)
 
-BEGIN { $| = 1; print "1..19\n"; }
+BEGIN { $| = 1; print "1..24\n"; }
 END {print "not ok 1\n" unless $loaded;}
 use ExtUtils::testlib;
 use VcsTools::HmsAgent;
@@ -25,15 +25,15 @@ my $trace = shift || 0 ;
 # of the test code):
 
 package main ;
+VcsTools::HmsAgent->hmsHost('hptnofs') ;
+VcsTools::HmsAgent->hmsDir('adir') ;
+VcsTools::HmsAgent->hmsBase('abase') ;
+VcsTools::HmsAgent->trace($trace);
+VcsTools::HmsAgent->test(1);
 
 my $h = new VcsTools::HmsAgent 
   (
-   hmsHost => 'hptnofs',
-   hmsDir =>'adir',
-   hmsBase => 'abase',
    name => 'dummy.txt',
-   trace => $trace,
-   test => 1,
    workDir => cwd()
   );
 
@@ -46,14 +46,16 @@ print "not " unless $res eq 'fhist -hhptnofs /abase/adir/dummy.txt 2>&1';
 print "ok ",$idx++,"\n";
 
 $res = $h -> checkOut(revision => '1.51', lock => 0) ;
+$res =~ s/ +/ /;
 warn $res,"\n" if $trace;
-print "not " unless $res eq 'fco -hhptnofs -r1.51 /abase/adir/dummy.txt';
+print "not " unless $res eq 'fco -r1.51 -hhptnofs /abase/adir/dummy.txt';
 print "ok ",$idx++,"\n";
 
 $res = $h -> checkOut(revision => '1.51.1.1', lock => 1) ;
+$res =~ s/ +/ /;
 warn $res,"\n" if $trace;
 print "not " 
-  unless $res eq 'fco -l -hhptnofs -r1.51.1.1 /abase/adir/dummy.txt';
+  unless $res eq 'fco -l -r1.51.1.1 -hhptnofs /abase/adir/dummy.txt';
 print "ok ",$idx++,"\n";
 
 $res = $h -> getContent(revision => '1.52') ;
@@ -153,3 +155,30 @@ warn $res,"\n" if $trace;
 print "not " 
   unless $res eq 'fll -RN -hmoon /alpha/a/dummy//dir/';
 print "ok ",$idx++,"\n";
+
+my $h2 = $h -> spawn (name => 'dummy2') ;
+print "not " 
+  unless defined $h2 ;
+print "ok ",$idx++,"\n";
+
+
+$res = $h2 -> list() ;
+warn $res,"\n" if $trace;
+print "not " 
+  unless $res eq 'fll -RN -hhptnofs /abase/adir';
+print "ok ",$idx++,"\n";
+
+my $h3 = $h -> spawn (name => 'dummy2', subDir => 'sub_dir') ;
+print "not " unless defined $h2 ;
+print "ok ",$idx++,"\n";
+
+
+$res = $h3 -> list() ;
+warn $res,"\n" if $trace;
+print "not " 
+  unless $res eq 'fll -RN -hhptnofs /abase/adir/sub_dir';
+print "ok ",$idx++,"\n";
+
+print "not " unless $h3->{workDir} =~ m!/sub_dir$!;
+print "ok ",$idx++,"\n";
+

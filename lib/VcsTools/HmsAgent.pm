@@ -2,12 +2,37 @@ package VcsTools::HmsAgent ;
 
 use strict;
 use Carp;
-use vars qw($VERSION);
+use vars qw($VERSION %ClassData);
 use String::ShellQuote ;
 use VcsTools::Process ;
 use AutoLoader qw/AUTOLOAD/ ;
 
-$VERSION = sprintf "%d.%03d", q$Revision: 1.4 $ =~ /(\d+)\.(\d+)/;
+$VERSION = sprintf "%d.%03d", q$Revision: 1.6 $ =~ /(\d+)\.(\d+)/;
+
+%ClassData = (hmsHost => undef, 
+              hmsBase => undef,
+              hmsDir => undef,
+              trace => 0,
+              test => 0) ;
+
+# translucent attribute (See Tom Christiansen's perltootc page)
+# creates accessor methods for all keys of ClassData.
+for my $datum (keys %ClassData)
+  {
+    no strict "refs";
+    *$datum = sub 
+      {
+        my $self = shift ;
+        my $class = ref($self) || $self ;
+        unless (ref($self))
+          {
+            $ClassData{$datum} = shift if @_ ;
+            return $ClassData{$datum} ;
+          }
+        $self->{$datum} = shift if @_ ;
+        return defined $self->{$datum} ? $self->{$datum} : $ClassData{$datum};
+      }
+  }
 
 # must pass the info data structure when creating it
 # 1 instance per file object.
@@ -15,6 +40,7 @@ sub new
   {
     my $type = shift ;
     my %args = @_ ;
+    local $_ ;
 
     my $self = {lastError => ''};
 
@@ -26,25 +52,27 @@ sub new
       }
 
     #optionnal, we may rely on the .fmrc
-    foreach (qw/hmsHost hmsBase hmsDir trace test/)
+    foreach (keys %ClassData)
       {
-        $self->{$_} = delete $args{$_} ;
-      }
-
-    $self->{hostOption} = defined $self->{hmsHost} ? 
-      '-h'.$self->{hmsHost} :'';
-
-    $self->{fullName} = $self->{name} ;
-
-    if (defined $self->{hmsBase})
-      {
-         $self->{fullName} = "$self->{hmsDir}/". $self->{fullName} if 
-           defined $self->{hmsDir};
-         $self->{fullName} = "/$self->{hmsBase}/". $self->{fullName};
-         $self->{fullName}  =~ s!//!/!g ;
+        $self->{$_} = delete $args{$_} if defined $args{$_} ;
       }
 
     bless $self,$type ;
+
+    $self->{hostOption} = defined $self->hmsHost ? 
+      '-h'.$self->hmsHost :'';
+
+    $self->{fullName} = $self->{name} ;
+
+    if (defined $self->hmsBase)
+      {
+        my $d = $self->hmsDir ;
+         $self->{fullName} = $d.'/'. $self->{fullName} if defined $d;
+         $self->{fullName} = '/'.$self->hmsBase.'/'. $self->{fullName};
+         $self->{fullName}  =~ s!//!/!g ;
+      }
+
+    return $self ;
   }
 
 
@@ -58,12 +86,12 @@ VcsTools::HmsAgent - Perl class to manage ONE HMS files..
 
 =head1 SYNOPSIS
 
+ VcsTools::HmsAgent->hmsHost ('a_host') ;
+ VcsTools::HmsAgent->hmsBase ('a_base') ;
+ 
  my $h = new VcsTools::HmsAgent 
   (
-   hmsBase => 'test_integ',
-   hmsHost => 'hptnofs',
    name => $file,
-   trace => $trace,
    workDir => $some_dir
   );
 
@@ -105,12 +133,85 @@ is part of HP SoftCM.
 
 #'
 
+=head1 Class data
+
+These items are translucent attributes (See L<perltootc> by Tom Christiansen).
+
+Using the following method, you may set or query the value for the data
+class. 
+
+=over 4
+
+=item *
+
+hmsHost: The HMS server name.
+
+=item *
+
+hmsBase: The HMS base name.
+
+=item *
+
+hmsDir: The directory relative to the HMS base where the file is
+archived.
+
+=item *
+
+trace: If set to 1, debug information are printed. (default 0)
+
+=item *
+
+test: If set to 1, each command will return the command to be executed
+instead of the command result.(default 0)
+
+=back
+
+These parameters may be overridden for an object by 
+
+=over 4
+
+=item *
+
+Passing a named parameters to the constructor 
+(eg. C<hmsHost =E<gt> 'tralfamadore'>)
+
+=item *
+
+By invoking the corresponding object method 
+(eg. C<$obj-E<gt>hmsHost('tralfamadore')>).
+
+=back
+
+
 =head1 Contructor
 
 =head2 new(...)
 
-Creates a new HMS agent class. Note that one HmsAgent must be created for 
+Creates a new HMS agent object. Note that one HmsAgent must be created for 
 each HMS file.
+
+Parameters are (not including the class data):
+
+=over 4
+
+=item *
+
+name: file name (mandatory)
+
+=item *
+
+workDir: local directory where the file is.
+
+=back
+
+If 'hmsHost' or 'hmsBase' parameters are not provided, HMS will rely on 
+the system or user .fmrc file. See fci(1) for more details.
+
+=head1 Methods
+
+=head2 spawn(...)
+
+Spawn a new HMS agent object inheriting the attributes of the spawner object.
 
 Parameters are :
 
@@ -122,36 +223,11 @@ name: file name (mandatory)
 
 =item *
 
-hmsHost: Specify the HMS server name.
-
-=item *
-
-hmsBase: Specify the HMS base name.
-
-=item *
-
-hmsDir: Specify the directory relative to the HMS base where the file
-is archived.
-
-=item *
-
-workDir: local directory where the file is.
-
-=item *
-
-trace: If set to 1, debug information are printed.
-
-=item *
-
-test: each command will return the command to be executed instead of the
-command result.
+subDir: Specify the directory of the spawned object relative to the
+directory of the spawner object. Both hmsDir and workDir of the
+spawned object will be set.
 
 =back
-
-If 'hmsHost' or 'hmsBase' parameters are not provided, HMS will rely on 
-the system or user .fmrc file. See fci(1) for more details.
-
-=head1 Methods
 
 =head2 checkOut(...)
 
@@ -161,7 +237,8 @@ Parameters are :
 
 =item *
 
-revision: file revision to check out.
+revision: file revision to check out. If not specified, the VCS system will
+decide itself which revision to check out.
 
 =item *
 
@@ -390,7 +467,7 @@ sub printDebug
   {
     my $self=shift ;
     
-    print shift if $self->{trace} ;
+    print shift if $self->trace() ;
   }
 
 sub error
@@ -399,30 +476,62 @@ sub error
      return $self->{lastError} ;
   }
 
+sub spawn
+  {
+    my $self = shift ;
+    my %args = @_ ;
+
+    croak "No name passed to $self->{name}::spawn\n" unless 
+      defined $args{name};
+
+    my %new ;
+
+    #optionnal, we may rely on the .fmrc
+    foreach my $k (keys %ClassData)
+      {
+        $new{$k} = $self->{$k} if defined $self->{$k} ;
+      }
+    
+    if (defined $self->hmsDir() and defined $args{subDir})
+      {
+        $new{hmsDir} = $self->hmsDir().'/'.$args{subDir} ;
+      }
+
+    $new{workDir} = $self->{workDir} ;
+    $new{workDir} .= '/'.$args{subDir} if defined $args{subDir} ;
+
+    return ref($self)->new 
+      (
+       name => $args{name},
+       %new
+      ) ;
+  }
+
 sub checkOut
   {
     my $self = shift ;
     my %args = @_ ;
 
-    foreach (qw/revision lock/)
+    foreach (qw/lock/)
       {
         die "No $_ passed to $self->{name}::checkOut\n" unless 
           defined $args{$_};
       }
 
+    my $str = defined $args{revision} ? "rev $args{revision}" : '' ;
     $self->printDebug
-      ("Check out $self->{name} rev $args{revision} lock $args{lock}\n");
+      ("Check out $self->{name} $str lock $args{lock}\n");
 
-    my $opt = $args{lock} ? '-l ' : '' ;
-    my $run = "fco $opt$self->{hostOption} -r$args{revision} ".
-      $self->{fullName} ;
+    my $opt = $args{lock} ? '-l' : '' ;
+    $opt .= defined $args{revision} ? " -r$args{revision}" : '' ; 
+    my $run = "fco $opt $self->{hostOption} ". $self->{fullName} ;
 
-    return $run if $self->{test};
+    return $run if $self->test();
 
     my $ret = openPipe
       (
        workDir => $self->{workDir}, 
-       trace => $self->{trace},
+       trace => $self->trace(),
        command => $run
       );
 
@@ -447,12 +556,12 @@ sub getContent
     my $run = "fco -p -r$args{revision} $self->{hostOption} ".
       $self->{fullName} ;
 
-    return $run if $self->{test};
+    return $run if $self->test();
 
     my $ret = openPipe 
       (
        workDir => $self->{workDir}, 
-       trace => $self->{trace},
+       trace => $self->trace(),
        command => $run
       );
 
@@ -474,12 +583,12 @@ sub checkArchive
 
     my $run = "fll -N $self->{hostOption} ". $self->{fullName} ;
 
-    return $run if $self->{test};
+    return $run if $self->test();
 
     my $result = openPipe 
       (
        workDir => $self->{workDir}, 
-       trace => $self->{trace},
+       trace => $self->trace(),
        command => $run
       );
 
@@ -523,12 +632,12 @@ sub changeLock
     my $run = "futil $opt $self->{hostOption} -r$args{revision} ".
       $self->{fullName} ;
 
-    return $run if $self->{test};
+    return $run if $self->test();
 
     return mySystem
       (
        workDir => $self->{workDir}, 
-       trace => $self->{trace},
+       trace => $self->trace(),
        command => $run
       );
   }
@@ -552,14 +661,14 @@ sub archiveLog
     my $run2 = "futil  $self->{hostOption} -m$args{revision}:" .
       shell_quote($args{'log'}) . " $self->{fullName} 2>&1" ;
 
-    return $run1."\n".$run2 if $self->{test};
+    return $run1."\n".$run2 if $self->test();
 
     foreach my $run ($run1,$run2)
       {
         my $ret = mySystem
           (
            workDir => $self->{workDir}, 
-           trace => $self->{trace},
+           trace => $self->trace(),
            command => $run
           );
 
@@ -581,12 +690,12 @@ sub getHistory
     my $run =  "fhist $self->{hostOption} $self->{fullName} 2>&1";
     $self->printDebug("getHistory of $self->{name}\n");
 
-    return $run if $self->{test};
+    return $run if $self->test();
 
     my $ret = openPipe
       (
        workDir => $self->{workDir}, 
-       trace => $self->{trace},
+       trace => $self->trace(),
        command => $run
       );
 
@@ -615,14 +724,14 @@ sub showDiff
 
     my $cmd = "fdiff $self->{hostOption} $revStr $self->{fullName} 2>&1" ;
 
-    return $cmd if $self->{test};
+    return $cmd if $self->test();
 
     my $ret = openPipe
       (
        command => $cmd, 
        expect => {0 => 1, 256 => 1},
        workDir => $self->{workDir}, 
-       trace => $self->{trace}
+       trace => $self->trace()
       );
     
     $self->{lastError} = getError unless defined $ret ;
@@ -646,12 +755,12 @@ sub create
 
     $self->printDebug("Creating HMS file $self->{name}\n");
 
-    return $ret.$run if $self->{test};
+    return $ret.$run if $self->test();
 
     $ret = openPipe
       (
        workDir => $self->{workDir}, 
-       trace => $self->{trace},
+       trace => $self->trace(),
        command => $run
       );
 
@@ -675,12 +784,12 @@ sub checkIn
     my $run = "fci $self->{hostOption} -u -r$args{revision} -m".
       shell_quote($args{'log'}) . " $self->{fullName} 2>&1" ;
 
-    return $run if $self->{test};
+    return $run if $self->test();
 
     my $ret = mySystem
       (
        workDir => $self->{workDir}, 
-       trace => $self->{trace},
+       trace => $self->trace(),
        command => $run
       );
 
@@ -696,13 +805,13 @@ sub mkHmsDir
 
     foreach my $what (qw/hmsHost hmsBase hmsDir/)
       {
-        $args{$what} = $self->{$what} unless defined $args{$what};
+        $args{$what} = $self->$what() unless defined $args{$what};
       }
 
     unless (defined $args{hmsDir})
       {
         $self->printDebug("makeHmsDir for $self->{name}: Undefined dir to make\n");
-        return $self->{test} ? '' : undef ;
+        return $self->test() ? '' : undef ;
       }
 
     $self->printDebug("Creating HMS dir $args{hmsDir}\n");
@@ -718,7 +827,7 @@ sub mkHmsDir
         next if $d eq ''; 
         $run .= '/'.$d;
         
-        if ($self->{test})
+        if ($self->test())
           {
             $all .= $run."\n";
             next;
@@ -726,13 +835,13 @@ sub mkHmsDir
 
         $ret = openPipe
           (
-           #trace => $self->{trace},
+           #trace => $self->trace(),
            command => $run
           );
         print getError unless defined $ret;
       }
     
-    return $all if $self->{test};
+    return $all if $self->test();
   }
 
 # returns the list of buddies in the same HMS directory
@@ -743,13 +852,13 @@ sub list
     
     foreach my $what (qw/hmsHost hmsBase hmsDir/)
       {
-        $args{$what} = $self->{$what} unless defined $args{$what};
+        $args{$what} = $self->$what() unless defined $args{$what};
       }
 
     unless (defined $args{hmsDir})
       {
         $self->printDebug("list for $self->{name}: Undefined dir to list\n");
-        return $self->{test} ? '' : undef ;
+        return $self->test() ? '' : undef ;
       }
 
     $self->printDebug("Listing HMS dir $args{hmsDir}\n");
@@ -759,12 +868,12 @@ sub list
     $run .= "/$args{hmsBase}/" if defined $args{hmsBase} ;
     $run .= $args{hmsDir} ;
 
-    return $run if $self->{test};
+    return $run if $self->test();
 
     my $result = openPipe 
       (
        workDir => $self->{workDir}, 
-       trace => $self->{trace},
+       trace => $self->trace(),
        command => $run
       );
 

@@ -2,14 +2,36 @@ package VcsTools::RcsAgent ;
 
 use strict;
 use Carp;
-use vars qw($VERSION);
+use vars qw($VERSION %ClassData);
 use File::stat ;
 use Cwd;
 use String::ShellQuote ;
 use VcsTools::Process ;
 use AutoLoader qw/AUTOLOAD/ ;
 
-$VERSION = sprintf "%d.%03d", q$Revision: 1.4 $ =~ /(\d+)\.(\d+)/;
+$VERSION = sprintf "%d.%03d", q$Revision: 1.5 $ =~ /(\d+)\.(\d+)/;
+
+%ClassData = (trace => 0,
+              test => 0) ;
+
+# translucent attribute (See Tom Christiansen's perltootc page)
+# creates accessor methods for all keys of ClassData.
+for my $datum (keys %ClassData)
+  {
+    no strict "refs";
+    *$datum = sub 
+      {
+        my $self = shift ;
+        my $class = ref($self) || $self ;
+        unless (ref($self))
+          {
+            $ClassData{$datum} = shift if @_ ;
+            return $ClassData{$datum} ;
+          }
+        $self->{$datum} = shift if @_ ;
+        return defined $self->{$datum} ? $self->{$datum} : $ClassData{$datum};
+      }
+  }
 
 # must pass the info data structure when creating it
 # 1 instance per file object.
@@ -28,9 +50,9 @@ sub new
       }
 
     #optionnal, we may rely on the .fmrc
-    foreach (qw/trace test/)
+    foreach (keys %ClassData)
       {
-        $self->{$_} = delete $args{$_} ;
+        $self->{$_} = delete $args{$_} if defined $args{$_} ;
       }
 
     $self->{workDir} .= '/' unless $self->{workDir} =~ m!/$! ;
@@ -53,7 +75,6 @@ VcsTools::RcsAgent - Perl class to manage ONE RCS files..
  my $h = new VcsTools::RcsAgent 
   (
    name => $file,
-   trace => $trace,
    workDir => $some_dir
   );
 
@@ -90,6 +111,42 @@ file to implement your own new class.
 
 #'
 
+=head1 Class data
+
+These items are translucent attributes (See L<perltootc> by Tom Christiansen).
+
+Using the following method, you may set or query the value for the data
+class. 
+
+=over 4
+
+=item *
+
+trace: If set to 1, debug information are printed. (default 0)
+
+=item *
+
+test: If set to 1, each command will return the command to be executed
+instead of the command result.(default 0)
+
+=back
+
+These parameters may be overridden for an object by 
+
+=over 4
+
+=item *
+
+Passing a named parameters to the constructor 
+(eg. C<trace =E<gt> 1>)
+
+=item *
+
+By invoking the corresponding object method 
+(eg. C<$obj-E<gt>trace(1)>).
+
+=back
+
 =head1 Contructor
 
 =head2 new(...)
@@ -97,15 +154,13 @@ file to implement your own new class.
 Creates a new RCS agent class. Note that one RcsAgent must be created for 
 each RCS file.
 
-Parameters are :
+Parameters are (not including the class data):
 
 =over 4
 
 =item *
 
 name: file name (mandatory)
-
-=item *
 
 =item *
 
@@ -123,6 +178,26 @@ command result.
 =back
 
 =head1 Methods
+
+=head2 spawn(...)
+
+Spawn a new RCS agent object inheriting the attributes of the spawner object.
+
+Parameters are :
+
+=over 4
+
+=item *
+
+name: file name (mandatory)
+
+=item *
+
+subDir: Specify the directory of the spawned object relative to the
+directory of the spawner object. Note that the workDir of the spawned
+object will be set.
+
+=back
 
 =head2 create()
 
@@ -701,7 +776,7 @@ sub checkIn
     return $ret ;
   }
 
-# returns the list of buddies in the same HMS directory
+# returns the list of buddies in the same RCS directory
 sub list
   {
     my $self=shift ;
@@ -733,6 +808,31 @@ sub list
     close DIR;
 
     return \%ret;
+  }
+
+sub spawn
+  {
+    my $self = shift ;
+    my %args = @_ ;
+
+    croak "No name passed to $self->{name}::spawn\n" unless 
+      defined $args{name};
+
+    my %new ;
+
+    foreach my $k (keys %ClassData)
+      {
+        $new{$k} = $self->{$k} if defined $self->{$k} ;
+      }
+    
+    $new{workDir}=$self->{workDir} ;
+    $new{workDir} .= '/'.$args{subDir} if defined $args{subDir} ;
+
+    return ref($self)->new 
+      (
+       name => $args{name},
+       %new
+      ) ;
   }
 
 1;

@@ -1,3 +1,22 @@
+v1.004 1999-10-11  Dominique Dumont  <domi@barrayar.grenoble.hp.com>
+
+	* lib/VcsTools/File.pm: 
+	- modified call to History, HmsAgent constructor to use the new
+	  translucent attributes 
+	- All xxxArgs are deprecated.
+
+	* VcsTools/HmsAgent.pm : 
+	- added translucent attributes for hms parameters
+	- added spawn method
+	- removed ENV{PWD} uses cwd instead
+	- creates HMS directory as needed
+	- added list method
+	- added mkHmsDir
+
+	* VcsTools/FileAgent.pm:
+	- use File::chmod
+	- changed chmod method to changeMode
+
 v1.003 1999-08-20  Dominique Dumont  <domi@barrayar.grenoble.hp.com>
 
 	* lib/VcsTools/FileAgent.pm : 

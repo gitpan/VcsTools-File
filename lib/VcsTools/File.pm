@@ -11,7 +11,7 @@ use AutoLoader qw/AUTOLOAD/ ;
 
 use base qw/VcsTools::Source/;
 
-$VERSION = sprintf "%d.%03d", q$Revision: 1.4 $ =~ /(\d+)\.(\d+)/;
+$VERSION = sprintf "%d.%03d", q$Revision: 1.5 $ =~ /(\d+)\.(\d+)/;
 
 
 ## Generic part
@@ -24,17 +24,46 @@ sub new
     my $self = {};
     $self->{body} = new Puppet::Body(cloth => $self, @_) ;
 
-    my $storeArgs = $self->{storageArgs} = $args{storageArgs} ;
-    
-    croak ("No storageArgs defined for VcsTools::File $self->{name}\n")
-      unless defined $storeArgs;
-
+    if (defined $args{storageArgs})
+      {
+        # transition code, should be removed sooner or later
+        carp "new $type $args{name}: storageArgs is deprecated";
+        $self->{storageArgs}=$args{storageArgs};
+      }
+    elsif (defined $args{storage})
+      {
+        # we will keep only this parameter
+        $self->{storage}= $args{storage};
+      }
+    else
+      {
+        croak ("No storage arg passed to $type::$self->{name}\n")
+      }
+        
+    # this will also be deprecated sooner or later
     $self->{usage} = $args{usage} || 'File' ;
     
+    bless $self,$type ;
+    
+    # vcs agent
+    if (defined $args{vcsClass})
+      {
+        $self->{vcsClass}=$args{vcsClass};
+        $self->{vcsArgs}=$args{vcsArgs};
+      }
+    elsif (defined  $args{vcsAgent})
+      {
+        $self->{vcsAgent}=$args{vcsAgent};
+      }
+    else
+      {
+        croak ("No vcsAgent passed to $type::$self->{name}\n")
+      }
+
     $self->{body}->printEvent("Creating File for $args{name}");
 
     # mandatory parameter
-    foreach (qw/name dataScanner vcsClass workDir/)
+    foreach (qw/name dataScanner workDir/)
       {
         croak ("No $_ passed to $type::$self->{name}\n") unless 
           defined $args{$_};
@@ -43,7 +72,7 @@ sub new
 
     
     # optional parameter
-    foreach (qw/vcsArgs test/)
+    foreach (qw/test/)
       {
         $self->{$_} = delete $args{$_} ;
       }
@@ -52,9 +81,8 @@ sub new
     
     $self->{workDir} .= '/' unless $self->{workDir} =~ m!/$! ;
  
-    bless $self,$type ;
-    
     $self->init(@_);
+
     return $self;
 
   }
@@ -89,12 +117,12 @@ VcsTools::File - Perl class to manage a VCS file.
 
 =head1 SYNOPSIS
 
- my %dbhash;
- tie %dbhash, 'MLDBM', $file, O_CREAT|O_RDWR, 0640 or die $! ;
+ my %dbhash; # may be tied to a MLDBM
 
  use VcsTools::LogParser ;
- use Puppet::VcsTools::HistEdit;
  use VcsTools::DataSpec::HpTnd qw($description readHook);
+ use Puppet::Storage ;
+ use VcsTools::HmsAgent ; # could be also RcsAgent 
  my $ds = new VcsTools::DataSpec::HpTnd ;
 
  my $ds = new VcsTools::LogParser
@@ -102,25 +130,25 @@ VcsTools::File - Perl class to manage a VCS file.
    description => $description,
    readHook => \&readHook
   ) ;
+ 
+ Puppet::Storage->dbHash(\%dbhash);
+ Puppet::Storage->keyRoot('root');
 
- my $mw = MainWindow-> new ;
- $mw->withdraw ;
+ my $storage= new Puppet::Storage(name => 'dummy.txt') ;
 
- my $he = $mw->HistoryEditor( 'format' => $ds) ;
+ VcsTools::HmsAgent->hmsBase('test');
+ VcsTools::HmsAgent->hmsHost('a_host');
+ 
+ my $agent = VcsTools::HmsAgent->new
+  (
+   name => 'dummy.txt',
+   workDir => cwd().'/'.$dir
+  );
 
  my $vf = new VcsTools::File 
   (
-   storageArgs =>
-   {
-    dbHash => \%dbhash,
-    keyRoot => 'root'
-    },
-   vcsClass => 'VcsTools::HmsAgent', # for instance
-   vcsArgs => 
-   {
-    hmsBase => 'test_integ',
-    hmsHost => 'hptnofs'
-   },
+   storage => $storage ,
+   vcsAgent => $agent,
    name => 'dummy.txt',
    workDir => $some_dir,
    dataScanner => $ds
@@ -144,7 +172,7 @@ L<Storable> file (within a .store directory)
 
 =head1 CAVEATS
 
-The file B<must> contain the C<$Revision: 1.4 $> VCS keyword.
+The file B<must> contain the C<$Revision: 1.5 $> VCS keyword.
 
 The VCS agent (hmsAgent) creation is clumsy. I should use translucent
 attributes or stuff like that like Tom Christiansen described. In
@@ -190,12 +218,7 @@ workDir : Absolute directory where the file is.
 
 =item *
 
-vcsClass : class name of the VCS interface (e.g. L<VcsTools::HmsAgent>).
-
-=item *
-
-vcsArgs: hash ref of parameter to pass to L<VcsTools::HmsAgent/"new(...)">
-(optional)
+vcsAgent : VCS interface object (e.g. L<VcsTools::HmsAgent>).
 
 =back
 
@@ -481,19 +504,23 @@ sub createHistory
   {
     my $self = shift ;
 
+    # handles legacy code 
+    my @store = defined $self->{storageArgs} ? 
+      (storageArgs => $self->{storageArgs}) :
+      (storage => $self->{storage}) ;
+
     if (not defined $self->{body}->getContent('history'))
       {
         require VcsTools::History ;
         my $how = $self->{trace} ? 'warn' : undef ;
         my $h = new VcsTools::History 
           (
-           storageArgs => $self->{storageArgs},
+           @store,
            usage => $self->{usage},
            how => $how,
            trace => $self->{trace},
            name => 'history',
-           dataScanner => $self->{dataScanner} ,
-           manager => $self 
+           dataScanner => $self->{dataScanner}
           );
         $self->{body}->acquire(body => $h->body(),name => 'history');
       }
@@ -656,27 +683,24 @@ sub chmodFile
     $self->check() unless defined $self->{myMode}{mode};
 
     my $writable = $args{writable} ;
+    my $mode = $args{mode} ;
 
-    croak "Undefined writable mode when calling chmod on $self->{name}\n"
-      unless defined $writable ;
+    croak "Undefined writable mode when calling chmod on $self->{name}\n" 
+      unless (defined $writable or defined $mode);
 
-    my $str = $writable ? '' : 'not ';
-    $self->{body}->printEvent("chmoding $self->{name} to ".$str."writable\n");
+    $mode = $writable ? 'u+w' : 'u-w' unless defined $mode ;
+ 
+    $self->{body}->printEvent("chmoding $self->{name} with $mode\n");
     
-    # retrieve current mode of the file and update the owner's write bit.
-    my $nextMode = $writable ? 
-      $self->{myMode}{mode} | 0200 : $self->{myMode}{mode} & 07577 ;
-
     $self->createLocalAgent unless defined $self->{localAgent} ;
     
     # get file stats
-    my $res = $self->{localAgent}-> chmod(mode => $nextMode);
+    my $res = $self->{localAgent}-> changeMode(mode => $mode);
 
     if (defined $res)
       {
-        $self->{status}{source} = $writable ? 'writable':'readable';
-        $self->{myMode}{mode} = $nextMode;
         $self->{body}->printDebug("Chmod OK\n");
+        $self->checkWritable() ; # get current status
       }
     else 
       {
@@ -795,6 +819,8 @@ sub createVcsAgent
     my $self = shift ;
     my $class = $self->{vcsClass};
 
+    carp ref($self),"::createVcsAgent is deprecated";
+
     my $file = $class ;
     $file .= '.pm' if $file =~ s!::!/!g ;
 
@@ -803,7 +829,6 @@ sub createVcsAgent
     $self->{body}->printEvent("Creating $class\n");
     $self->{vcsAgent} = $class-> new 
       (
-       manager => $self,
        name => $self->{name},
        workDir => $self->{workDir},
        trace => $self->{trace},
@@ -929,16 +954,34 @@ sub checkOut
 sub getContent
   {
     my $self = shift ;
-    $self->check() unless defined $self->{myMode} and ref $self->{myMode} eq 'HASH' and scalar keys %{$self->{myMode}} > 0 ;
+    my %args= @_ ;
 
-    croak ("$self->{name}: cannot getContent with a non-existing archive\n")
+    unless (defined $args{revision})
+      {
+        $self->createLocalAgent() unless defined $self->{localAgent};
+        my $res = $self->{localAgent}->readFile();
+        $self->{body}->
+          printEvent("getContent failed: ".$self->{localAgent} ->error())
+            unless defined $res;
+        return $res ;
+      }
+    
+    $self->check() unless (defined $self->{myMode} and 
+                           defined $self->{archive} and 
+                           ref $self->{myMode} eq 'HASH' and 
+                           scalar keys %{$self->{myMode}} > 0 );
+
+    croak ("$self->{name}: cannot getContent of revision $args{revision} from a non-existing archive\n")
       unless $self->{archive}{exists};
 
     $self->createVcsAgent() unless defined $self->{vcsAgent} ;
     my $res = $self->{vcsAgent} -> getContent(@_);
 
-    $self->{body}->printEvent("getContent failed: ".$self->{vcsAgent} ->error())
-      unless defined $res;
+    $self->{body}->
+      printEvent("getContent $args{revision} failed: ".
+                 $self->{vcsAgent} ->error())
+        unless defined $res;
+
     return $res;
   }
 
@@ -982,12 +1025,12 @@ sub archiveFile
         $infoRef->{date} = ($year+1900) .'/'.($mon+1)."/$mday $hour:$min:$sec";
       }
 
-    unless (defined $infoRef->{Author})
+    unless (defined $infoRef->{author})
       {
         my ($name,$passwd,$uid,$gid,$quota,$comment,$gcos,$dir,$shell,$expire)
           = getpwuid($<);
         my $fullname = substr($gcos,0,index($gcos,','));
-        $infoRef->{Author}=$name.'@'.hostname()." ($fullname)";
+        $infoRef->{author}=$name.'@'.hostname()." ($fullname)";
       }
     
     #create new archive, or add revision ?

@@ -29,7 +29,9 @@ use ExtUtils::testlib;
 use Cwd;
 use VcsTools::File;
 use VcsTools::LogParser ;
-use VcsTools::DataSpec::HpTnd qw($description readHook);
+use VcsTools::DataSpec::Rcs qw($description readHook);
+use VcsTools::RcsAgent ;
+use Puppet::Storage ;
 require Tk::ErrorDialog; 
 $loaded = 1;
 my $idx = 1;
@@ -74,14 +76,21 @@ print "ok ",$idx++,"\n";
 
 my $how = $trace ? 'warn' : undef ;
 
+Puppet::Storage->dbHash(\%dbhash);
+Puppet::Storage->keyRoot('root');
+
+VcsTools::RcsAgent->trace($trace);
+
+my $agent = VcsTools::RcsAgent->new
+  (
+   name => 'dummy.txt',
+   workDir => cwd()
+  );
+
 my $vf = new VcsTools::File 
   (
-   storageArgs =>
-   {
-    dbHash => \%dbhash,
-    keyRoot => 'root'
-    },
-   vcsClass => 'VcsTools::RcsAgent',
+   storage=> new Puppet::Storage(name => 'dummy.txt') ,
+   vcsAgent => $agent,
    name => 'dummy.txt',
    workDir => cwd(),
    dataScanner => $ds ,
@@ -93,13 +102,6 @@ print "ok ",$idx++,"\n";
 my $res;
 my $h = $vf->createHistory();
 
-sub checkH 
-  {
-    print "version list : ",join(' ',sort keys %{$h->{version}}),"\n";
-    my $ref = $h->{storage}->getDbInfo('versionList') ;
-    print "stored version list : ",
-    join(' ',sort @$ref),"\n" if defined $ref;
-  }
 
 print "create file\n" if $trace ;
 open(FILE,">$file") || die "open file failed\n";
@@ -107,15 +109,11 @@ print FILE "# \$Revision\$\nDummy text\n";
 close FILE ;
 print "ok ",$idx++,"\n";
 
-checkH ;
-
 print "create archiveFile\n" if $trace ;
 $res = $vf -> archiveFile();
 print "not " unless defined $res;
 print "not " if -w $file;
 print "ok ",$idx++,"\n";
-
-checkH ;
 
 print "check out 1.1\n" if $trace ;
 $res = $vf-> checkOut(revision => '1.1', lock => 1) ;
@@ -123,19 +121,13 @@ warn join("\n",@$res),"\n" if $trace;
 print "not " unless defined $res ;
 print "ok ",$idx++,"\n";
 
-checkH ;
-
 $h->{storage}->storeDbInfo('historyUpdateTime' => 10);
 $vf->updateHistory();
-
-checkH ;
 
 print "check for errors\n" if $trace ;
 $res = $vf-> checkError() ;
 print "enot " unless defined $res && $res;
 print "ok ",$idx++,"\n";
-checkH ;
-
 
 # working on 1.1
 print "writing in file for v1.2\n" if $trace ;
@@ -143,14 +135,12 @@ open(FILE,">>$file") || die "open file failed\n";
 print FILE "Dummy text for 1.1 -> 1.2\n";
 close FILE ;
 print "ok ",$idx++,"\n";
-checkH;
 
 print "check in 1.2\n" if $trace ;
 $res = $vf -> archiveFile(info =>{log => 'dummy log for 1.2'});
 print "not " unless defined $res;
 print "not " if -w $file;
 print "ok ",$idx++,"\n";
-checkH;
 
 print "check for errors\n" if $trace ;
 $res = $vf-> checkError() ;

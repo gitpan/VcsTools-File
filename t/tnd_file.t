@@ -20,7 +20,7 @@ BEGIN
       }
     else
       {
-        print "1..27\n"; 
+        print "1..30\n"; 
         $skipIt = 0 ;
       }
   }
@@ -30,6 +30,8 @@ use Test;
 use ExtUtils::testlib;
 use VcsTools::File;
 use VcsTools::LogParser ;
+use VcsTools::HmsAgent ;
+use Puppet::Storage ;
 use Cwd ;
 use VcsTools::DataSpec::HpTnd qw($description readHook);
 require Tk::ErrorDialog; 
@@ -79,20 +81,24 @@ print "ok ",$idx++,"\n";
 
 my $how = $trace ? 'warn' : undef ;
 
+Puppet::Storage->dbHash(\%dbhash);
+Puppet::Storage->keyRoot('root');
+
+VcsTools::HmsAgent->hmsBase('test_integ');
+VcsTools::HmsAgent->hmsDir($dir);
+VcsTools::HmsAgent->hmsHost('hptnofs');
+VcsTools::HmsAgent->trace($trace);
+
+my $agent = VcsTools::HmsAgent->new
+  (
+   name => 'dummy.txt',
+   workDir => cwd().'/'.$dir
+  );
+
 my $vf = new VcsTools::File 
   (
-   storageArgs =>
-   {
-    dbHash => \%dbhash,
-    keyRoot => 'root'
-    },
-   vcsClass => 'VcsTools::HmsAgent',
-   vcsArgs => 
-   {
-    hmsBase => 'test_integ',
-    hmsDir => $dir,
-    hmsHost => 'hptnofs'
-   },
+   storage=> new Puppet::Storage(name => 'dummy.txt') ,
+   vcsAgent => $agent,
    name => 'dummy.txt',
    workDir => cwd().'/'.$dir,
    dataScanner => $ds ,
@@ -109,6 +115,27 @@ print FILE "# \$Revision\$\nDummy text\n";
 close FILE ;
 chdir $origDir or die "can't chdir $origDir\n";
 print "ok ",$idx++,"\n";
+
+warn "Read content\n" if $trace;
+$res = $vf->getContent();
+print "not " unless (defined $res and 
+                     join('',@$res) eq "# \$Revision\$\nDummy text\n");
+print "ok ",$idx++,"\n";
+
+# check chmod
+print "chmod +x\n" if $trace;
+$vf->chmodFile(mode =>'+x');
+chdir $dir or die "can't chdir $dir\n";
+print "not " unless -x $file ;
+print "ok ",$idx++,"\n";
+
+#chmod back with different starting dir
+print "chmod -x\n" if $trace;
+$vf->chmodFile(mode =>'a-x');
+print "not " if -x $file ;
+chdir $origDir or die "can't chdir $origDir\n";
+print "ok ",$idx++,"\n";
+
 
 $res = $vf -> archiveFile();
 print "not " unless defined $res;
@@ -234,5 +261,6 @@ $vf->archiveLog(info => $info, revision => '1.1');
 my $histR=$vf->getHistory();
 print "not " unless grep(/\bmodified\b/,@$histR) == 1 ;
 print "ok ",$idx++,"\n";
+
 
 exit;

@@ -43,14 +43,16 @@ print "not " unless $res eq 'fhist  dummy.txt 2>&1';
 print "ok ",$idx++,"\n";
 
 $res = $h -> checkOut(revision => '1.51', lock => 0) ;
+$res =~ s/ +/ /g;
 warn $res,"\n" if $trace;
-print "not " unless $res eq 'fco  -r1.51 dummy.txt';
+print "not " unless $res eq 'fco -r1.51 dummy.txt';
 print "ok ",$idx++,"\n";
 
 $res = $h -> checkOut(revision => '1.51.1.1', lock => 1) ;
+$res =~ s/ +/ /g;
 warn $res,"\n" if $trace;
 print "not " 
-  unless $res eq 'fco -l  -r1.51.1.1 dummy.txt';
+  unless $res eq 'fco -l -r1.51.1.1 dummy.txt';
 print "ok ",$idx++,"\n";
 
 $res = $h -> getContent(revision => '1.52') ;

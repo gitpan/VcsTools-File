@@ -3,13 +3,14 @@ package VcsTools::FileAgent ;
 use VcsTools::Process;
 use Carp;
 use File::Path;
+use File::chmod ;
 
 use strict;
 
 use vars qw($VERSION);
 use AutoLoader qw/AUTOLOAD/ ;
 
-$VERSION = sprintf "%d.%03d", q$Revision: 1.5 $ =~ /(\d+)\.(\d+)/;
+$VERSION = sprintf "%d.%03d", q$Revision: 1.6 $ =~ /(\d+)\.(\d+)/;
 
 sub new
   {
@@ -161,7 +162,7 @@ the file lines
 =head2 getRevision()
 
 Will read the content of the file and return the revision number. Return 0
-of the $Revision: 1.5 $ keyword is present in the file but not set by the 
+of the $Revision: 1.6 $ keyword is present in the file but not set by the 
 VCS system.
 
 =head2 stat()
@@ -173,7 +174,7 @@ array.
 
 Will return '1' or '0' if the file exists or not. ('C<-e>' test). 
 
-=head2 chmod(...)
+=head2 changeMode(...)
 
 Will perform a chmod (see perlfunc(3)) on the file.
 
@@ -391,7 +392,7 @@ sub exist
       }
   }
 
-sub chmod
+sub changeMode
   {
     my $self = shift ;
     my %args = @_ ;
@@ -400,13 +401,13 @@ sub chmod
 
     unless (defined $args{mode} )
       {
-        croak ("No mode specified to chmod file $f\n");
+        croak ("No mode specified to changeMode file $f\n");
       }
           
     my $mode = $args{mode} ;
-    warn "chmod $mode on file $f\n" if $self->{trace};
+    warn "changeMode $mode on file $f\n" if $self->{trace};
 
-    my $res = CORE::chmod $mode, $f ;
+    my $res = File::chmod::chmod($mode, $f) ;
     if ($res)
       {
         return 1;
