@@ -1,5 +1,25 @@
+v1.003 1999-08-20  Dominique Dumont  <domi@barrayar.grenoble.hp.com>
+
+	* lib/VcsTools/FileAgent.pm : 
+	- creates directory as needed
+
+	* lib/VcsTools/File.pm : 
+	- split between File and Source to enable a better reuse of File
+	method for Components (A set of file, this is not yet released)
+
+	* lib/VcsTools/HmsAgent.pm (list): 
+	- removed ENV{PWD} uses cwd instead
+	- creates HMS directory as needed
+	- added	list method
+	- added mkHmsDir
+
+	* lib/VcsTools/RcsAgent.pm (list): 
+	- removed ENV{PWD} uses cwd instead
+	- creates RCS sub-dir
+	- added list method
+
 v1.002 1999-08-11  Dominique Dumont  <domi@barrayar.grenoble.hp.com>
 
 	* lib/VcsTools/RcsAgent.pm (new): 
-	- fix bug with new version of RCS (diffrent log file)
+	- fix bug with new version of RCS (different log file)
 

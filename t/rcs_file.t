@@ -25,14 +25,12 @@ BEGIN
   }
 
 END {print "not ok 1\n" unless $loaded;}
-use Test;
 use ExtUtils::testlib;
+use Cwd;
 use VcsTools::File;
 use VcsTools::LogParser ;
 use VcsTools::DataSpec::HpTnd qw($description readHook);
 require Tk::ErrorDialog; 
-use Fcntl ;
-use MLDBM qw(DB_File);
 $loaded = 1;
 my $idx = 1;
 print "ok ",$idx++,"\n";
@@ -50,11 +48,7 @@ package main ;
 
 use strict ;
 
-my $dbfile = 'test.db';
-unlink($dbfile) if -r $dbfile ;
-
 my %dbhash;
-tie %dbhash,  'MLDBM',    $dbfile , O_CREAT|O_RDWR, 0640 or die $! ;
 
 require VcsTools::DataSpec::Rcs ;
 print "ok ",$idx++,"\n";
@@ -70,10 +64,11 @@ print "ok ",$idx++,"\n";
 my $file = 'dummy.txt';
 
 warn "heavy cleanup\n";
-mkdir ('RCS', 0755) or die "Can't mkdir RCS:$!" unless -d 'RCS' ;
 unlink ("RCS/$file,v") or die "Can't unlink RCS/$file,v:$!" 
-  if -e "RCS/$file,v" ;
+  if (-d 'RCS' and -e "RCS/$file,v") ;
+rmdir('RCS') if -d 'RCS' ;
 unlink ($file) or die "Can't unlink $file:$!" if -e $file ;
+unlink ($file.',v') or die "Can't unlink $file,v:$!" if -e $file.',v' ;
 
 print "ok ",$idx++,"\n";
 
@@ -88,7 +83,7 @@ my $vf = new VcsTools::File
     },
    vcsClass => 'VcsTools::RcsAgent',
    name => 'dummy.txt',
-   workDir => $ENV{'PWD'},
+   workDir => cwd(),
    dataScanner => $ds ,
    trace => $trace,
    how => $how,
@@ -96,6 +91,15 @@ my $vf = new VcsTools::File
 print "ok ",$idx++,"\n";
 
 my $res;
+my $h = $vf->createHistory();
+
+sub checkH 
+  {
+    print "version list : ",join(' ',sort keys %{$h->{version}}),"\n";
+    my $ref = $h->{storage}->getDbInfo('versionList') ;
+    print "stored version list : ",
+    join(' ',sort @$ref),"\n" if defined $ref;
+  }
 
 print "create file\n" if $trace ;
 open(FILE,">$file") || die "open file failed\n";
@@ -103,34 +107,52 @@ print FILE "# \$Revision\$\nDummy text\n";
 close FILE ;
 print "ok ",$idx++,"\n";
 
+checkH ;
+
 print "create archiveFile\n" if $trace ;
 $res = $vf -> archiveFile();
 print "not " unless defined $res;
 print "not " if -w $file;
 print "ok ",$idx++,"\n";
 
+checkH ;
+
 print "check out 1.1\n" if $trace ;
 $res = $vf-> checkOut(revision => '1.1', lock => 1) ;
 warn join("\n",@$res),"\n" if $trace;
 print "not " unless defined $res ;
 print "ok ",$idx++,"\n";
 
+checkH ;
+
+$h->{storage}->storeDbInfo('historyUpdateTime' => 10);
+$vf->updateHistory();
+
+checkH ;
+
+print "check for errors\n" if $trace ;
 $res = $vf-> checkError() ;
 print "enot " unless defined $res && $res;
 print "ok ",$idx++,"\n";
+checkH ;
+
 
 # working on 1.1
+print "writing in file for v1.2\n" if $trace ;
 open(FILE,">>$file") || die "open file failed\n";
 print FILE "Dummy text for 1.1 -> 1.2\n";
 close FILE ;
 print "ok ",$idx++,"\n";
+checkH;
 
 print "check in 1.2\n" if $trace ;
 $res = $vf -> archiveFile(info =>{log => 'dummy log for 1.2'});
 print "not " unless defined $res;
 print "not " if -w $file;
 print "ok ",$idx++,"\n";
+checkH;
 
+print "check for errors\n" if $trace ;
 $res = $vf-> checkError() ;
 print "enot " unless defined $res && $res;
 print "ok ",$idx++,"\n";
@@ -141,11 +163,13 @@ warn join("\n",@$res),"\n" if $trace;
 print "not " unless defined $res ;
 print "ok ",$idx++,"\n";
 
+print "check for errors\n" if $trace ;
 $res = $vf-> checkError() ;
 print "enot " unless defined $res && $res;
 print "ok ",$idx++,"\n";
 
 
+print "writing in file for v1.1.1.1\n" if $trace ;
 open(FILE,">>$file") || die "open file failed\n";
 print FILE "Dummy text for 1.1 -> 1.1.1.1\n";
 close FILE ;
@@ -157,6 +181,7 @@ print "not " unless defined $res;
 print "not " if -w $file;
 print "ok ",$idx++,"\n";
 
+print "check for errors\n" if $trace ;
 $res = $vf-> checkError() ;
 print "not " unless defined $res && $res;
 print "ok ",$idx++,"\n";
@@ -196,6 +221,7 @@ $res = $vf -> setUpMerge(ancestor => '1.1', below => '1.2', other => '1.1.1.1');
 print "not " unless defined $res;
 print "ok ",$idx++,"\n";
 
+print "check for errors\n" if $trace ;
 $res = $vf-> checkError() ;
 print "not " unless defined $res && $res;
 print "ok ",$idx++,"\n";
@@ -209,13 +235,16 @@ print "not " if (-e 'v1.1_dummy.txt' or -e 'v1.1.1.1_dummy.txt');
 print "ok ",$idx++,"\n";
 
 # emulate merge abort
+print "changing lock to 0\n" if $trace ;
 $res = $vf->changeLock(lock => 0);
 print "not " unless defined $res && $res;
 print "ok ",$idx++,"\n";
 
+print "check for errors\n" if $trace ;
 $res = $vf-> checkError() ;
 print "not " unless defined $res && $res;
 print "ok ",$idx++,"\n";
+
 
 # modify the log of one file
 # my @keys = $ds->getKeys() ;

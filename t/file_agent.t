@@ -9,6 +9,7 @@
 BEGIN { $| = 1; print "1..13\n"; }
 END {print "not ok 1\n" unless $loaded;}
 use ExtUtils::testlib;
+use Cwd ;
 use VcsTools::FileAgent;
 $loaded = 1;
 my $idx = 1;
@@ -30,7 +31,7 @@ my $agent = "VcsTools::FileAgent" ;
 my $file = 'test.txt';
 my $fa = new $agent(name => $file,
                     trace => $trace,
-                    workDir => $ENV{'PWD'}.'/'.$dtest);
+                    workDir => cwd().'/'.$dtest);
 print "ok ",$idx++,"\n";
 
 my $fname = $dtest.'/'.$file ;

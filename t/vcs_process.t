@@ -26,7 +26,7 @@ use strict ;
 
 my $res = openPipe 
   (
-   command => 'll',
+   command => 'ls',
    trace => $trace
   ) ;
 

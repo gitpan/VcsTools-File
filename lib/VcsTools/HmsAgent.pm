@@ -7,7 +7,7 @@ use String::ShellQuote ;
 use VcsTools::Process ;
 use AutoLoader qw/AUTOLOAD/ ;
 
-$VERSION = sprintf "%d.%03d", q$Revision: 1.3 $ =~ /(\d+)\.(\d+)/;
+$VERSION = sprintf "%d.%03d", q$Revision: 1.4 $ =~ /(\d+)\.(\d+)/;
 
 # must pass the info data structure when creating it
 # 1 instance per file object.
@@ -64,7 +64,7 @@ VcsTools::HmsAgent - Perl class to manage ONE HMS files..
    hmsHost => 'hptnofs',
    name => $file,
    trace => $trace,
-   workDir => $ENV{'PWD'}
+   workDir => $some_dir
   );
 
  $h -> getHistory() ;
@@ -323,7 +323,8 @@ of the command.
 
 =head2 create()
 
-Create the HMS file.
+Create the HMS file. If needed this method will also create the HMS path
+in the HMS base.
 
 Returns an array ref containing the output of the 'fci' commmand in case of
 success, undef in case of problems.
@@ -353,6 +354,21 @@ success, undef in case of problems.
 In case of problem, you can call the error() method to get the STDOUT
 of the command.
 
+=head2 list()
+
+Returns a hash reference containing all HMS files found in the HMS
+base in the directory of this file and all sub-directories (i.e list
+recursively all files found in and below /hmsBase/hmsDir).
+
+The hash will contains the locker and locked revision (if any) and the
+last modification time of the HMS archive.
+
+For instance, list will return :
+ {'foo' => {rev => '1.0', locker => 'bob', time => '935143309'},
+  'subdir/bar' => {rev => undef , locker => undef, time => '935143305'}}
+
+
+Returns undef in case of problem.
 
 =head1 AUTHOR
 
@@ -511,7 +527,7 @@ sub changeLock
 
     return mySystem
       (
-       workDir => $args{workDir}, 
+       workDir => $self->{workDir}, 
        trace => $self->{trace},
        command => $run
       );
@@ -569,7 +585,7 @@ sub getHistory
 
     my $ret = openPipe
       (
-       workDir => $args{workDir}, 
+       workDir => $self->{workDir}, 
        trace => $self->{trace},
        command => $run
       );
@@ -605,7 +621,7 @@ sub showDiff
       (
        command => $cmd, 
        expect => {0 => 1, 256 => 1},
-       workDir => $args{workDir}, 
+       workDir => $self->{workDir}, 
        trace => $self->{trace}
       );
     
@@ -622,13 +638,17 @@ sub create
           "with HMS.\n" )
       if defined $args{revision};
 
-    $self->printDebug("Creating HMS file $self->{name}\n");
-
     my $run = "fci -auto $self->{hostOption} -u $self->{fullName}" ;
 
-    return $run if $self->{test};
+    my $ret = $self->mkHmsDir() ;
+    $self->{lastError} = getError unless defined $ret ;
+    $self->printDebug($self->{lastError}) unless defined $ret ;
 
-    my $ret = openPipe
+    $self->printDebug("Creating HMS file $self->{name}\n");
+
+    return $ret.$run if $self->{test};
+
+    $ret = openPipe
       (
        workDir => $self->{workDir}, 
        trace => $self->{trace},
@@ -666,6 +686,110 @@ sub checkIn
 
     $self->{lastError} = getError unless defined $ret ;
     return $ret ;
+  }
+
+sub mkHmsDir
+  {
+    my $self= shift;
+
+    my %args = @_;
+
+    foreach my $what (qw/hmsHost hmsBase hmsDir/)
+      {
+        $args{$what} = $self->{$what} unless defined $args{$what};
+      }
+
+    unless (defined $args{hmsDir})
+      {
+        $self->printDebug("makeHmsDir for $self->{name}: Undefined dir to make\n");
+        return $self->{test} ? '' : undef ;
+      }
+
+    $self->printDebug("Creating HMS dir $args{hmsDir}\n");
+
+    my $ret;
+    my $run = "futil -M " ;
+    $run .= "-h$args{hmsHost} " if defined $args{hmsHost};
+    $run .= "/$args{hmsBase}" if defined $args{hmsBase} ;
+
+    my $all = '';
+    foreach my $d (split '/',$args{hmsDir})
+      {
+        next if $d eq ''; 
+        $run .= '/'.$d;
+        
+        if ($self->{test})
+          {
+            $all .= $run."\n";
+            next;
+          }
+
+        $ret = openPipe
+          (
+           #trace => $self->{trace},
+           command => $run
+          );
+        print getError unless defined $ret;
+      }
+    
+    return $all if $self->{test};
+  }
+
+# returns the list of buddies in the same HMS directory
+sub list
+  {
+    my $self=shift ;
+    my %args = @_ ;
+    
+    foreach my $what (qw/hmsHost hmsBase hmsDir/)
+      {
+        $args{$what} = $self->{$what} unless defined $args{$what};
+      }
+
+    unless (defined $args{hmsDir})
+      {
+        $self->printDebug("list for $self->{name}: Undefined dir to list\n");
+        return $self->{test} ? '' : undef ;
+      }
+
+    $self->printDebug("Listing HMS dir $args{hmsDir}\n");
+
+    my $run = "fll -RN " ;
+    $run .= "-h$args{hmsHost} " if defined $args{hmsHost};
+    $run .= "/$args{hmsBase}/" if defined $args{hmsBase} ;
+    $run .= $args{hmsDir} ;
+
+    return $run if $self->{test};
+
+    my $result = openPipe 
+      (
+       workDir => $self->{workDir}, 
+       trace => $self->{trace},
+       command => $run
+      );
+
+    my %ret;
+    if (defined $result)
+      {
+        #foreach file of the component
+        foreach my $line (@$result)
+          {
+            my ($mode,$locker,$size,$time,$name,$rev) = 
+              split (/[\s\[\]]+/, $line) ;
+            next unless $mode =~ /^000/ ; # directory
+            $ret{$name} = {
+                           revision => $rev,
+                           locker => $locker,
+                           time => $time
+                          };
+          }
+      }
+    else
+      {
+        $self->{lastError} = getError ;
+        return undef ;
+      }
+    return \%ret;
   }
 
 1;

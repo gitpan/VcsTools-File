@@ -1,14 +1,17 @@
-package VcsTools::File ;
+package VcsTools::File;
  
 use strict;
 use Puppet::Body ;
 use Carp ;
 use vars qw($VERSION);
 use Storable ;
+use Sys::Hostname ;
    
 use AutoLoader qw/AUTOLOAD/ ;
 
-$VERSION = sprintf "%d.%03d", q$Revision: 1.3 $ =~ /(\d+)\.(\d+)/;
+use base qw/VcsTools::Source/;
+
+$VERSION = sprintf "%d.%03d", q$Revision: 1.4 $ =~ /(\d+)\.(\d+)/;
 
 
 ## Generic part
@@ -56,34 +59,6 @@ sub new
 
   }
 
-sub init
-  {
-    my $self = shift;
-    my %args = @_;
-
-    ##update the local informations about the file
-    $self->getTiedInfo();    
-
-    if ($self->createFileAgent()->exist() == 1)
-      {
-        $self->{fileMode}{modified} = $self->getTimeStamp() 
-          unless defined $self->{fileMode}{modified};
-      }
-    else
-      {
-        delete $self->{fileMode}{modified} 
-        if defined $self->{fileMode}{modified};
-        undef $self->{fileMode}{writable};
-      }
-
-    #add the history to the contents if it is defined
-    if (defined $args{history})
-      {
-        $self->{history} = $args{history};
-        $self->{body}->acquire(body => $self->{history}->body(),name => 'history');
-      }
-  }
-
 #on object destruction, write file info to a file named  file->{name}
 #and located in a .tiedHashes directory himself located in the directory
 #of the local copy of the working file
@@ -94,12 +69,6 @@ sub DESTROY
      $self->setTiedInfo();
    }
 
-
-sub error
-  {
-     my $self=shift ;
-     return $self->{lastError} ;
-  }
 
 # placed here, it does not conflict with getHistory when the name 
 # is truncated by AutoSplit
@@ -112,6 +81,7 @@ sub getHistoryHash
 1;
 
 __END__
+
 
 =head1 NAME
 
@@ -152,7 +122,7 @@ VcsTools::File - Perl class to manage a VCS file.
     hmsHost => 'hptnofs'
    },
    name => 'dummy.txt',
-   workDir => $ENV{'PWD'},
+   workDir => $some_dir,
    dataScanner => $ds
   );
  
@@ -174,7 +144,7 @@ L<Storable> file (within a .store directory)
 
 =head1 CAVEATS
 
-The file B<must> contain the C<$Revision: 1.3 $> VCS keyword.
+The file B<must> contain the C<$Revision: 1.4 $> VCS keyword.
 
 The VCS agent (hmsAgent) creation is clumsy. I should use translucent
 attributes or stuff like that like Tom Christiansen described. In
@@ -233,10 +203,7 @@ vcsArgs: hash ref of parameter to pass to L<VcsTools::HmsAgent/"new(...)">
 
 =head2 check()
 
-Checks r/w permission of the local file, the revision of the local file 
-and lock state of the file.
-
-The file must contain the C<$Revision: 1.3 $> keyword.
+See L<VcsTools::Source/"check()>
 
 =head1 History handling methods
 
@@ -256,7 +223,7 @@ VCS base was changed by someone else.
 
 =head1 Handling the real file
 
-=head2 createFileAgent()
+=head2 createLocalAgent()
 
 Create the file Agent class.
 
@@ -272,8 +239,7 @@ Will launch a window editor though the file agent
 
 =head2 getRevision()
 
-Will return the revision of the local file. Will return undef in case
-of problems.
+See L<VcsTools::Source/"getRevision()>
 
 =head2 checkWritable() 
 
@@ -387,26 +353,7 @@ class. E.g. L<VcsTools::HmsAgent/"getContent(...)">
 
 =head2 archiveLog(...)
 
-Will modify the log (not the file) of a specified revision of the file in
-the VCS base. 
-
-Parameters are :
-
-=over 4
-
-=item *
-
-info: info hash that contains the new informations to update the log in the
-VCS base
-
-=item *
-
-revision: revision number of the log to update.
-
-=back
-
-Returns an array ref containing the output of the VCS command in case
-of success, undef in case of problems.
+See L<VcsTools::Source/"archiveLog()">
 
 =head2 getHistory()
 
@@ -471,71 +418,6 @@ VcsTools::Version(3), VcsTools::File(3)
 =cut
 
 
-# internal
-# used to check between the stored status and fileMode which are
-# modified by the object method. and the actual status of the physical file
-
-sub checkError
-  {
-    my $self = shift ;
-    my %args = @_ ;
-    
-    my %status = %{$self->{status}};
-    my %fmode  = %{$self->{fileMode}} ;
-    
-    $self->check(@_) ;
-    
-    my $ok =1 ;
-    foreach my $key (keys %status)
-      {
-        my $tmp = $status{$key} eq $self->{status}{$key};
-        $self->{body}->printDebug("status $key pb, expected $status{$key} ".
-                                  "got $self->{status}{$key}")
-          unless $tmp ;
-        $ok&=$tmp;
-      }
-    
-    foreach  my $key (keys %fmode)
-      {
-        next if $key eq 'mode'; # to difficult to predict
-        my $tmp = $fmode{$key} eq $self->{fileMode}{$key};
-        $self->{body}->printDebug("file mode $key pb expected $fmode{$key}".
-                                  "got $self->{fileMode}{$key}") 
-          unless $tmp ;
-        $ok&=$tmp;
-      }
-    
-    return $ok ;
-  }
-
-
-# check existence of  file and its lock state
-sub check
-  {
-    my $self = shift ;
-    my %args = @_ ;
-
-    $self->createFileAgent unless defined $self->{fileAgent} ;
-
-    $self->{body}->printEvent("Checking file\n");
-
-    $self->{status}{file}="";
-    $self->{status}{archive}="";
-
-    $self->checkExist ();
-    $self->checkArchive ();
-    
-    # file exists -> check writable
-    # file archived and exist -> check revision
-
-    # get file stats
-    $self->checkWritable() if $self->{fileMode}{exists} ;
-    
-    $self->getRevision  ()
-      if $self->{archive}{exists} and $self->{fileMode}{exists} ;
-
-    return $self->{fileMode} ;
-  }
 
 #internal
 sub lockIs
@@ -547,44 +429,30 @@ sub lockIs
     $self->{body}->printEvent ("Revision $rev is locked by $locker\n") 
       if defined $rev;
 
-    $self->getRevision() if ($self->{fileMode}{exists} and 
-                             not defined $self->{fileMode}{revision}) ;
+    $self->getRevision() if ($self->{myMode}{exists} and 
+                             not defined $self->{myMode}{revision}) ;
 
-    if (defined $rev and $self->{fileMode}{exists} and 
-        $self->{fileMode}{revision} eq $rev)
+    if (defined $rev and $self->{myMode}{exists} and 
+        $self->{myMode}{revision} eq $rev)
       {
         #$self->{locked} = $locker ;
-        $self->{fileMode}{locked} = 1;
+        $self->{myMode}{locked} = 1;
         $self->{status}{archive} = 'locked' ;
       }
     else
       {
         #$self->{locked} = 'no';
         $self->{status}{archive} = 'unlocked' ;
-        $self->{fileMode}{locked} = 0 ;
+        $self->{myMode}{locked} = 0 ;
       }
   }
   
-sub getModeRef
-  {
-    return shift->{fileMode} ;
-  }
-
-sub getStatusRef
-  {
-    return shift->{status} ;
-  }
-
-sub getArchiveRef
-  {
-    return shift->{archive} ;
-  }
 
 #sub createArchive
 #  {
 #    my $self = shift ;
 #
-#    $self->check() unless defined $self->{fileMode} ;
+#    $self->check() unless defined $self->{myMode} ;
 #    $self->createVcsAgent() unless defined $self->{vcsAgent} ;
 #
 #    my $res = $self->{vcsAgent}->create() ;
@@ -593,13 +461,13 @@ sub getArchiveRef
 #
 #    # if success, archive exists, file is read-only, file is unlocked
 #    $self->{archive}{exists} = 1 ;
-#    $self->{fileMode}{revision} = '1.1';
-#    $self->{fileMode}{writable} = 0 ;
-#    $self->{fileMode}{locked} = 0 ;
-#    $self->{fileMode}{mode} = 0444 ;
-#    $self->{status}{file}= 'readable' ;
+#    $self->{myMode}{revision} = '1.1';
+#    $self->{myMode}{writable} = 0 ;
+#    $self->{myMode}{locked} = 0 ;
+#    $self->{myMode}{mode} = 0444 ;
+#    $self->{status}{source}= 'readable' ;
 #    $self->{status}{archive} = 'unlocked' ;
-#    $self->{fileMode}{exists} =1 ;
+#    $self->{myMode}{exists} =1 ;
 #    
 #    return 1;
 #  }
@@ -636,13 +504,6 @@ sub createHistory
     return $h ;
   }
 
-sub historyRef 
-  {
-    my $self = shift ;
-    #BOB
-    $self->createHistory;
-    #return $self->{body}->getContent('history')->cloth();
-  }
    
 sub updateHistory
   {
@@ -669,18 +530,28 @@ sub updateHistory
 sub createFileAgent
   {
     my $self = shift ;
-    unless (defined $self->{fileAgent}) 
+    warn "createFileAgent is deprecated, please use createLocalAgent";
+    $self->createLocalAgent(@_);
+  }
+
+sub createLocalAgent
+  {
+    my $self = shift ;
+    unless (defined $self->{localAgent}) 
       {
           require VcsTools::FileAgent ;
           
-          $self->{fileAgent} =  VcsTools::FileAgent -> new 
+          # Avoid breaking older versions. To be removed
+          $self->{fileAgent} = 
+          $self->{localAgent} =  VcsTools::FileAgent -> new 
             (
              name => $self->{name},
              trace => $self->{trace},
              workDir => $self->{workDir}
             );
+          
       }
-    return $self->{fileAgent};
+    return $self->{localAgent};
 }
 
 sub getTimeStamp
@@ -688,9 +559,9 @@ sub getTimeStamp
     my $self = shift;
     if ($self->checkExist == 1) 
       {
-        my $fullName = $self->createFileAgent()->makeFullName();
+        my $fullName = $self->createLocalAgent()->makeFullName();
         #get last modif time
-        return $self->{fileAgent}->stat()->[8];
+        return $self->{localAgent}->stat()->[8];
       }
     else 
       {
@@ -703,37 +574,14 @@ sub edit
   {
     my $self = shift ;
 
-    $self->check() unless defined $self->{fileMode};
+    $self->check() unless defined $self->{myMode};
 
     return undef if 
-      defined $self->{fileMode}{writable} && not $self->{fileMode}{writable};
+      defined $self->{myMode}{writable} && not $self->{myMode}{writable};
 
-    $self->createFileAgent unless defined $self->{fileAgent} ;
+    $self->createLocalAgent unless defined $self->{localAgent} ;
 
-    $self->{fileAgent} -> edit();
-  }
-
-sub getRevision
-  {
-    my $self = shift ;
-    my %args = @_ ;
-
-    $self->{body}->printDebug("Extracting Rev from file\n");
-    my $res = $self->{fileAgent}-> getRevision();
-
-    if (defined $res and $res ne '0')
-      {
-        $self->{body}->printEvent("Found revision $res\n");
-        $self->{fileMode}{revision} = $res ;
-      }
-    else
-      {
-        $self->{body}->printEvent($self->{fileAgent}->error()) ;
-        # this is a major error where VCS is concerned.
-        croak "Can't extract revision from file $self->{name}. Is \$Revision\$ missing?"
-      }
-
-    return $res ;
+    $self->{localAgent} -> edit();
   }
 
 sub checkWritable
@@ -742,25 +590,25 @@ sub checkWritable
     my %args = @_ ;
 
     $self->{body}->printDebug("checkWritable: Calling stat\n");
-    my $res = $self->{fileAgent}-> stat();
+    my $res = $self->{localAgent}-> stat();
 
     if (defined $res)
       {
         $self->{body}->printDebug("Stat result is ".join(' ',@$res)."\n");
         
-        $self->{fileMode}{mode} = $res->[2] ;
-        $self->{fileMode}{writable} = $res->[2] & 0200 ? 1 : 0; # octal ;
-        $self->{status}{file}= 'writable' if $self->{fileMode}{writable} ;
-        $self->{body}->printDebug("File mode: $self->{fileMode}{mode}, ".
-                                  "writable: $self->{fileMode}{writable}\n");
-        return $self->{fileMode}{writable};
+        $self->{myMode}{mode} = $res->[2] ;
+        $self->{myMode}{writable} = $res->[2] & 0200 ? 1 : 0; # octal ;
+        $self->{status}{source}= 'writable' if $self->{myMode}{writable} ;
+        $self->{body}->printDebug("File mode: $self->{myMode}{mode}, ".
+                                  "writable: $self->{myMode}{writable}\n");
+        return $self->{myMode}{writable};
       }
     else
       {
-        $self->{fileMode}{mode} = undef ;
-        $self->{fileMode}{writable} = undef;
-        $self->{status}{file}= 'unknown';
-        $self->{body}->printEvent($self->{fileAgent}->error()) ;
+        $self->{myMode}{mode} = undef ;
+        $self->{myMode}{writable} = undef;
+        $self->{status}{source}= 'unknown';
+        $self->{body}->printEvent($self->{localAgent}->error()) ;
         return undef;
       }
   }
@@ -771,28 +619,31 @@ sub checkExist
     my %args = @_ ;
 
     $self->{body}->printDebug("Calling exists\n");
-    my $res = $self->{fileAgent}-> exist () ;
+    my $res = $self->{localAgent}-> exist () ;
 
     if (defined $res)
       {
         if ($res)
           {
             $self->{body}->printDebug("File exists\n");
-            $self->{status}{file}='readable' 
-              if (defined $self->{status}{file} and 
-                  $self->{status}{file} eq "");
+            $self->{status}{source}='readable' 
+              if (defined $self->{status}{source} and 
+                  $self->{status}{source} eq "");
           }
         else
           {
             $self->{body}->printEvent("File is missing\n") ;
-            $self->{status}{file}="no file";
+            $self->{status}{source}="no file";
           }
-        $self->{fileMode}{exists}=$res;
+        $self->{myMode}{exists}=$res;
       }
     else
       {
-        $self->{body}->printEvent($self->{fileAgent}->error()) ;
+        $self->{body}->printEvent($self->{localAgent}->error()) ;
       }
+ 
+    # Avoid breaking older versions. To be removed 
+    $self->{fileMode} = $self->{myMode} ;
 
     return $res ;
   }
@@ -802,7 +653,7 @@ sub chmodFile
     my $self = shift ;
     my %args = @_ ;
 
-    $self->check() unless defined $self->{fileMode}{mode};
+    $self->check() unless defined $self->{myMode}{mode};
 
     my $writable = $args{writable} ;
 
@@ -814,22 +665,22 @@ sub chmodFile
     
     # retrieve current mode of the file and update the owner's write bit.
     my $nextMode = $writable ? 
-      $self->{fileMode}{mode} | 0200 : $self->{fileMode}{mode} & 07577 ;
+      $self->{myMode}{mode} | 0200 : $self->{myMode}{mode} & 07577 ;
 
-    $self->createFileAgent unless defined $self->{fileAgent} ;
+    $self->createLocalAgent unless defined $self->{localAgent} ;
     
     # get file stats
-    my $res = $self->{fileAgent}-> chmod(mode => $nextMode);
+    my $res = $self->{localAgent}-> chmod(mode => $nextMode);
 
     if (defined $res)
       {
-        $self->{status}{file} = $writable ? 'writable':'readable';
-        $self->{fileMode}{mode} = $nextMode;
+        $self->{status}{source} = $writable ? 'writable':'readable';
+        $self->{myMode}{mode} = $nextMode;
         $self->{body}->printDebug("Chmod OK\n");
       }
     else 
       {
-        $self->{body}->printEvent($self->{fileAgent}->error()) ;
+        $self->{body}->printEvent($self->{localAgent}->error()) ;
       }
 
     return $res;
@@ -892,7 +743,7 @@ sub doWrite
 
     if ($args{fileName} eq $self->{name})
       {
-        if ($self->{fileMode}{exists} and not $self->{fileMode}{writable} )
+        if ($self->{myMode}{exists} and not $self->{myMode}{writable} )
           {
             $self->{body}->
               printEvent("Can't write: $self->{name} if not writable");
@@ -901,12 +752,12 @@ sub doWrite
         
         # since we are going to write this non-existent file, it WILL
         # be writable.
-        $self->{fileMode}{writable} = 1 unless $self->{fileMode}{exists} ;
+        $self->{myMode}{writable} = 1 unless $self->{myMode}{exists} ;
       }
 
-    $self->createFileAgent() unless defined $self->{fileAgent};
+    $self->createLocalAgent() unless defined $self->{localAgent};
 
-    my $res = $self->{fileAgent}->writeFile
+    my $res = $self->{localAgent}->writeFile
       (
        name => $args{fileName}, 
        content => $args{content}
@@ -918,12 +769,12 @@ sub doWrite
           {
             #if the file is was written, let's set its timestamp
             #otherwise, nothing ...
-            $self->{fileMode}{modified} = $self->getTimeStamp();
+            $self->{myMode}{modified} = $self->getTimeStamp();
           }
       }
     else
       {
-        $self->{body}->printEvent("Write file $args{name} failed :\n".$self->{fileAgent}->error());
+        $self->{body}->printEvent("Write file $args{name} failed :\n".$self->{localAgent}->error());
       }
     
     return $res ;
@@ -932,7 +783,7 @@ sub doWrite
 sub remove
   {
     my $self = shift;
-    $self->createFileAgent()->remove();
+    $self->createLocalAgent()->remove();
   }
 
 # end real file part
@@ -966,7 +817,7 @@ sub checkArchive
     my %args = @_ ;
     $self->createVcsAgent() unless defined $self->{vcsAgent} ;
     my $result = $self->{vcsAgent}->
-      checkArchive(revision => $self->{fileMode}{revision});
+      checkArchive(revision => $self->{myMode}{revision});
     
     if (defined $result)
       {
@@ -1003,7 +854,7 @@ sub changeLock
     my $lock = $args{lock} ;
     
     my $rev = defined $args{revision} ? $args{revision} : 
-      $self->{fileMode}{revision} ;
+      $self->{myMode}{revision} ;
 
     unless (defined $lock)
       {
@@ -1019,7 +870,7 @@ sub changeLock
     if (defined $res)
       {
         $self->{status}{archive}= $lock ? 'locked' : 'unlocked' ;
-        $self->{fileMode}{locked} = $lock ;
+        $self->{myMode}{locked} = $lock ;
         $self->{body}->printDebug("lock set to $lock OK\n");
       }
     else
@@ -1036,7 +887,7 @@ sub checkOut
     my $self = shift ;
     my %args = @_ ;
 
-    if ($args{lock} and $self->{fileMode}{writable})
+    if ($args{lock} and $self->{myMode}{writable})
       {
         $self->{body}->
           printEvent("$self->{name} checkOut: Can't check out an already writable version\n");
@@ -1048,7 +899,7 @@ sub checkOut
 
     $self->createVcsAgent() unless defined $self->{vcsAgent} ;
 
-    my $crev = $args{revision} || $self->{fileMode}{revision} ;
+    my $crev = $args{revision} || $self->{myMode}{revision} ;
     my $result = $self->{vcsAgent} -> checkOut
       (
        revision => $crev,
@@ -1058,13 +909,13 @@ sub checkOut
     if (defined $result)
       {
           $self->{body}->printDebug("checkOut OK\n");
-          $self->{fileMode}{exists} = 1 ;
-          $self->{fileMode}{revision} = $args{revision} ;
-          $self->{fileMode}{writable} = $args{lock} ;
-          $self->{status}{file} = $args{lock} ? 'writable' : 'readable' ;
+          $self->{myMode}{exists} = 1 ;
+          $self->{myMode}{revision} = $args{revision} ;
+          $self->{myMode}{writable} = $args{lock} ;
+          $self->{status}{source} = $args{lock} ? 'writable' : 'readable' ;
           $self->lockIs($args{revision},'yourself') if $args{lock} ;
-          $self->{fileMode}{createTime} = $self->getTimeStamp();
-          $self->{fileMode}{modified} = $self->getTimeStamp();
+          $self->{myMode}{createTime} = $self->getTimeStamp();
+          $self->{myMode}{modified} = $self->getTimeStamp();
       }
     else
       {
@@ -1078,7 +929,7 @@ sub checkOut
 sub getContent
   {
     my $self = shift ;
-    $self->check() unless defined $self->{fileMode} and ref $self->{fileMode} eq 'HASH' and scalar keys %{$self->{fileMode}} > 0 ;
+    $self->check() unless defined $self->{myMode} and ref $self->{myMode} eq 'HASH' and scalar keys %{$self->{myMode}} > 0 ;
 
     croak ("$self->{name}: cannot getContent with a non-existing archive\n")
       unless $self->{archive}{exists};
@@ -1091,54 +942,6 @@ sub getContent
     return $res;
   }
 
-sub archiveLog
-  {
-    my $self = shift ;
-    my %args = @_ ;
-
-    foreach (qw/revision info/)
-      {
-        die "No $_ passed to $self->{name}::archiveLog\n" unless 
-          defined $args{$_};
-      }
-
-    $self->{body}->printEvent("Archiving a log for revision $args{revision}");
-    
-    $self->createVcsAgent() unless defined $self->{vcsAgent} ;
-    
-    my $h = $self->createHistory();
-
-    # check that the revision actually exists
-    my $versionObj = $h->getVersionObj($args{revision}) ;
-    
-    unless (defined $versionObj)
-      {
-        $self->printEvent("Can't archive log: unknown revision $args{revision}\n");
-        return undef ;
-      }
-
-    # create suitable string for archive
-    my $logStr= $self->{dataScanner}->buildLogString($args{info});
-
-    # archive the info in the VCS system
-    my $res = $self->{vcsAgent} -> archiveLog 
-      (
-       revision => $args{revision},
-       log => $logStr,
-       state => $args{info}{state}
-      );
-
-    # update the History and Version object
-    if (defined $res)
-      {
-        $versionObj->update(info => $args{info});
-      }
-    else
-      {
-        $self->{body}->printEvent("archiveLog failed: ".$self->{vcsAgent}->error()) ;
-        return undef ;
-      }
-  }
     
 sub getHistory
   {
@@ -1154,48 +957,6 @@ sub showDiff
     $self->{vcsAgent} -> showDiff(@_);
   }
 
-# internal    
-sub prepareArchive
-  {
-    my $self = shift ;
-    my %args = @_ ;
-
-    # always check if the archive has not been changed by someone else.
-    #if ( defined $self->{fileMode}) {$self->checkArchive();} 
-    #else {$self->check() ;}
-    $self->check();
-    unless ($self->{fileMode}{writable})
-      {
-        $self->{body}->printEvent("Can't archive non writable file\n");
-         return undef;
-      }
-
-    unless ($self->{archive}{exists})
-      {
-        return '1.1';
-      }
-    
-    my $history = $self->createHistory() ;
-
-    my $newRev = $args{revision} ||
-      $history->guessNewRev($self->{fileMode}{revision}) ;
-
-    unless (defined $newRev)
-      {
-        $self->{body}->printEvent("Can't archive: can't guess new rev\n");
-        return undef ;
-      }
-
-    $self->changeLock(lock => 1) if ($self->{fileMode}{locked} == 0);
-
-    $self->{body}->printEvent
-      (
-       "Archiving file from version ".$self->{fileMode}{revision}.
-       " to $newRev\n"
-      );
-
-    return $newRev;
-  }
 
 # open correct window
 sub archiveFile 
@@ -1204,7 +965,11 @@ sub archiveFile
     my %args = @_ ;
 
     my $newRev = $self->prepareArchive(@_);
+
     return undef unless defined $newRev ;
+
+    $self->changeLock(lock => 1) if ($self->{archive}{exists} and 
+                                     $self->{myMode}{locked} == 0);
 
     $self->createVcsAgent() unless defined $self->{vcsAgent} ;
  
@@ -1222,7 +987,7 @@ sub archiveFile
         my ($name,$passwd,$uid,$gid,$quota,$comment,$gcos,$dir,$shell,$expire)
           = getpwuid($<);
         my $fullname = substr($gcos,0,index($gcos,','));
-        $infoRef->{Author}=$name.'@'.$ENV{'MyHost'}." ($fullname)";
+        $infoRef->{Author}=$name.'@'.hostname()." ($fullname)";
       }
     
     #create new archive, or add revision ?
@@ -1250,19 +1015,19 @@ sub archiveFile
       (
        revision => $newRev, 
        #after is set to none in case of archive creation
-       after => $self->{fileMode}{revision}, # can be undef for first archive
+       after => $self->{myMode}{revision}, # can be undef for first archive
        info =>  $infoRef
       ) ;
 
     # if success, archive exists, file is read-only, file is unlocked
-    $self->{fileMode}{modified} = $self->getTimeStamp();
-    $self->{fileMode}{revision} = $newRev;
-    $self->{fileMode}{writable} = 0 ;
-    $self->{fileMode}{locked} = 0 ;
-    $self->{fileMode}{mode} = 0444 ;
-    $self->{status}{file}= 'readable' ;
+    $self->{myMode}{modified} = $self->getTimeStamp();
+    $self->{myMode}{revision} = $newRev;
+    $self->{myMode}{writable} = 0 ;
+    $self->{myMode}{locked} = 0 ;
+    $self->{myMode}{mode} = 0444 ;
+    $self->{status}{source}= 'readable' ;
     $self->{status}{archive}= 'unlocked' ;
-    $self->{fileMode}{exists} =1 ;
+    $self->{myMode}{exists} =1 ;
     $self->{archive}{exists} = 1 ;
   }
 
@@ -1299,73 +1064,13 @@ sub mergeCleanup
   {
     my $self = shift ;
 
-    $self->createFileAgent unless defined $self->{fileAgent} ;
+    $self->createLocalAgent unless defined $self->{localAgent} ;
 
     foreach my $what (@{$self->{mergeFiles}}{'ancestor','other'})
       {
-        $self->{fileAgent}->remove (name => $what) ;
+        $self->{localAgent}->remove (name => $what) ;
       }
   }
           
-#####the following methods manage permanent data
-
-# See perl module Class::ERoot if it gets more complex.
-
-# Should use Storable instead.
-
-my @permanent = qw/fileMode status archive/ ;
-
-sub setTiedInfo
-  {
-    my $self = shift;
-    
-    # management of the directory containing the permanent data :
-    #create the save directory, save current dir
-    #move to save directory, save data into the tied hash
-    #and go back to current directory
-   
-    warn "Saving permanent data for $self->{name}\n";
-
-    #no more ending slash !
-    $self->{workDir} =~ s/\/$//;
-    my $saveDir = $self->{workDir}.'/.store/'; 
-    mkdir $saveDir,0700 unless -e $saveDir and -d $saveDir;
-
-    #file and tied hash creation
-    my $file = $saveDir.$self->{name};
-    unlink($file) if -r $file ;
-    my %hash;
-    
-    foreach my $what (@permanent)
-      {
-        $hash{$what} = $self->{$what} if 
-          (
-           defined $self->{$what} and 
-           ref $self->{$what} eq 'HASH' and 
-           scalar keys %{$self->{$what}} > 0
-          );        
-      }
-    store \%hash, $file ;
-  }
-
-sub getTiedInfo
-  {
-    my $self = shift;
-    
-    #no more ending slash !
-    $self->{workDir} =~ s/\/$//;
-    my $file = $self->{workDir}.'/.store/'.$self->{name}; 
-
-    if (-e $file and -r $file)
-      {
-        my $h = retrieve($file) ;
-
-        #update volatile data using permanent ones
-        foreach my $what (@permanent)
-          {
-            $self->{$what} = $h->{$what} if (defined $h->{$what});
-          }
-      }
-  }
 
 1;

@@ -9,6 +9,7 @@
 BEGIN { $| = 1; print "1..14\n"; }
 END {print "not ok 1\n" unless $loaded;}
 use ExtUtils::testlib;
+use Cwd;
 use VcsTools::HmsAgent;
 $loaded = 1;
 my $idx = 1;
@@ -30,7 +31,7 @@ my $h = new VcsTools::HmsAgent
    name => 'dummy.txt',
    trace => $trace,
    test => 1,
-   workDir => $ENV{'PWD'}
+   workDir => cwd()
   );
 
 print "ok ",$idx++,"\n";

@@ -10,7 +10,7 @@ my $skipIt ;
 BEGIN 
   { 
     $| = 1; 
-    if (system('rcs') > 512)
+    if (system('rcs>/dev/null') > 512)
       {
         warn "You don't have the RCS VCS system\n",
         "Skipping most of this test\n";
@@ -19,13 +19,17 @@ BEGIN
       }
     else
       {
-        print "1..15\n"; 
+        print "1..16\n"; 
         $skipIt = 0 ;
       }
   }
 
 END {print "not ok 1\n" unless $loaded;}
 use ExtUtils::testlib;
+use Cwd;
+use Carp ;
+use File::Path ;
+
 use VcsTools::RcsAgent;
 $loaded = 1;
 my $idx = 1;
@@ -40,15 +44,22 @@ my $trace = shift || 0 ;
 # (correspondingly "not ok 13") depending on the success of chunk 13
 # of the test code):
 
-package main ;
-
 my $file = 'dummy.txt';
+my $dir = 'my_rcs/work/';
+my $fullName = $dir.'/'.$file ;
+my $origDir = cwd();
+
+sub ckd { croak("Stuck in wrong directory",cwd()) unless $origDir=cwd();}
 
 warn "heavy cleanup\n";
-mkdir ('RCS', 0755) or die "Can't mkdir RCS:$!" unless -d 'RCS' ;
-unlink ("RCS/$file,v") or die "Can't unlink RCS/$file,v:$!" 
-  if -e "RCS/$file,v" ;
-unlink ($file) or die "Can't unlink $file:$!" if -e $file ;
+if (-d "my_rcs")
+  {
+    system("rm -rf my_rcs") && die "Can't cleanup my_rcs dir";
+  }
+
+mkpath([$dir],1) unless -d $dir ;
+
+
 
 print "ok ",$idx++,"\n";
 
@@ -56,41 +67,53 @@ my $h = new VcsTools::RcsAgent
   (
    name => $file,
    trace => $trace,
-   workDir => $ENV{'PWD'}
+   workDir => $dir
   );
 
 print "ok ",$idx++,"\n";
 my $res ;
+
+ckd ;
 
 warn "normal error below\n";
 $res = $h -> checkArchive(revision => undef) ;
 print "not " if defined $res;
 print "ok ",$idx++,"\n";
 
+ckd ;
+
+chdir $dir or die "can't chdir $dir\n";
 open(FILE,">$file") || die "open file failed\n";
 print FILE "# \$Revision\$\nDummy text\n";
 close FILE ;
+chdir $origDir or die "can't chdir $origDir\n";
 
 print "create\n" if $trace ;
 $res = $h -> create();
 warn "@$res\n" if $trace;
 print "not " unless defined $res;
-print "not " if -w $file;
+print "not " if -w $fullName;
 print "ok ",$idx++,"\n";
+
+ckd ;
 
 print "getHistory\n" if $trace ;
 $res = $h -> getHistory() ;
 warn join("\n",@$res),"\n" if $trace;
 print "not " unless defined $res;
-print "not " if -w $file;
+print "not " if -w $fullName;
 print "ok ",$idx++,"\n";
+
+ckd ;
 
 print "changeLock to 1\n" if $trace ;
 # this will chmod the file to rw
 $res = $h -> changeLock(lock => 1,revision => '1.1' ) ;
 warn join("\n",@$res),"\n" if $trace;
-#print "not " unless -w $file;
+#print "not " unless -w $fullName;
 print "not " unless defined $res ;
+
+ckd ;
 
 print "ok ",$idx++,"\n";
 
@@ -101,7 +124,9 @@ warn join("\n",@$res),"\n" if $trace;
 print "not " unless defined $res ;
 print "ok ",$idx++,"\n";
 
-chmod 0444,$file;
+ckd ;
+
+chmod 0444,$fullName;
 
 print "checkOut 1.1\n" if $trace ;
 $res = $h -> checkOut(revision => '1.1', lock => 1) ;
@@ -109,16 +134,24 @@ warn join("\n",@$res),"\n" if $trace;
 print "not " unless defined $res ;
 print "ok ",$idx++,"\n";
 
-print "checkArchive\n" if $trace ;
+ckd ;
+
+print "checkArchive 1.1\n" if $trace ;
 $res = $h -> checkArchive(revision => 1.1) ;
 warn $h->error unless defined $res;
-print "not " unless defined $res;
-print "not " unless defined $res->[0] && $res->[0] eq '1.1';
+warn join("\n",@$res),"\n" if $trace && defined $res;
+print "not " unless defined $res && defined $res->[0] && $res->[0] eq '1.1';
 print "ok ",$idx++,"\n";
 
-open(FILE,">>$file") || die "open file failed\n";
+ckd ;
+
+chdir $dir or die "can't chdir $dir\n";
+open(FILE,">>$file") || die "open $file failed\n";
 print FILE "\nMore Dummy text\n";
 close FILE ;
+chdir $origDir or die "can't chdir $origDir\n";
+
+ckd ;
 
 print "checkIn 1.2\n" if $trace ;
 $res = $h -> checkIn
@@ -130,12 +163,15 @@ warn join("\n",@$res),"\n" if $trace;
 print "not " unless defined $res ;
 print "ok ",$idx++,"\n";
 
+ckd ;
+
 print "getHistory\n" if $trace ;
 $res = $h -> getHistory() ;
 warn join("\n",@$res),"\n" if $trace;
 print "not " unless defined $res;
-print "not " if -w $file;
 print "ok ",$idx++,"\n";
+
+ckd ;
 
 print "getContent\n" if $trace ;
 $res = $h -> getContent(revision => '1.1') ;
@@ -143,6 +179,8 @@ warn join("\n",@$res),"\n" if $trace;
 print "not " 
   unless "@$res" eq "# \$Revision: 1.1 \$ Dummy text";
 print "ok ",$idx++,"\n";
+
+ckd ;
 
 #$res = $h -> archiveLog('log' => "new dummy\nhistory for 1.1\n",
 #                     state => 'Dummy', revision => '1.1') ;
@@ -160,7 +198,7 @@ print "showDiff\n" if $trace ;
 $res = $h -> showDiff(rev1 => '1.1', rev2 => '1.2') ;
 warn join("\n",@$res),"\n" if $trace;
 print "not " unless defined $res;
-print "not " unless index(join("\n",@$res),
+print "not " unless defined $res && index(join("\n",@$res),
 '1c1
 < # $Revision: 1.1 $
 ---
@@ -170,10 +208,22 @@ print "not " unless index(join("\n",@$res),
 > More Dummy text');
 print "ok ",$idx++,"\n";
 
+ckd ;
+
 print "checkArchive\n" if $trace ;
 $res = $h -> checkArchive(revision => '1.2') ;
 warn "@$res\n" if $trace;
 print "Not " unless defined $res;
 print "not " if defined $res->[1];
+ckd ;
+
 print "ok ",$idx++,"\n";
 
+print "list\n" if $trace ;
+$res = $h -> list() ;
+warn "Found file ",join(' ',keys %$res),"\n" if defined $res and $trace;
+print "not " unless (defined $res and 
+                     join(' ',keys %$res) eq 'dummy.txt') ;
+print "ok ",$idx++,"\n";
+
+ckd ;

@@ -5,13 +5,14 @@ use strict;
 use vars qw($VERSION $error @EXPORT %expect);
 use IPC::Open3;
 use FileHandle;
+use Cwd;
 use Carp;
 use base 'Exporter';
 
 use AutoLoader qw/AUTOLOAD/ ;
 @EXPORT=qw(getError mySystem openPipe pipeIn);
 
-$VERSION = sprintf "%d.%03d", q$Revision: 1.2 $ =~ /(\d+)\.(\d+)/;
+$VERSION = sprintf "%d.%03d", q$Revision: 1.3 $ =~ /(\d+)\.(\d+)/;
 
 %expect = ( 0 => 1, 256 => 0 ) ; # default ksh result interpretation
 
@@ -144,7 +145,7 @@ sub mySystem
   {
     my %args = @_ ;
 
-    my $dir = $ENV{'PWD'} ;
+    my $dir = cwd() ;
 
     if (defined $args{workDir} and not chdir ($args{workDir}))
       {
@@ -176,7 +177,7 @@ sub openPipe
   {
     my %args = @_ ;
 
-    my $dir = $ENV{'PWD'} ;
+    my $dir = cwd() ;
 
     if (defined $args{workDir} and not chdir ($args{workDir}))
       {
@@ -212,7 +213,7 @@ sub pipeIn
   {
     my %args = @_ ;
 
-    my $dir = $ENV{'PWD'} ;
+    my $dir = cwd() ;
 
     if (defined $args{workDir} and not chdir ($args{workDir}))
       {

@@ -4,11 +4,12 @@ use strict;
 use Carp;
 use vars qw($VERSION);
 use File::stat ;
+use Cwd;
 use String::ShellQuote ;
 use VcsTools::Process ;
 use AutoLoader qw/AUTOLOAD/ ;
 
-$VERSION = sprintf "%d.%03d", q$Revision: 1.2 $ =~ /(\d+)\.(\d+)/;
+$VERSION = sprintf "%d.%03d", q$Revision: 1.4 $ =~ /(\d+)\.(\d+)/;
 
 # must pass the info data structure when creating it
 # 1 instance per file object.
@@ -53,7 +54,7 @@ VcsTools::RcsAgent - Perl class to manage ONE RCS files..
   (
    name => $file,
    trace => $trace,
-   workDir => $ENV{'PWD'}
+   workDir => $some_dir
   );
 
  $h -> getHistory() ;
@@ -122,6 +123,13 @@ command result.
 =back
 
 =head1 Methods
+
+=head2 create()
+
+Create a new archive. If the RCS sub-directory is not present, it will also
+be created.
+
+Returns undef in case of problems.
 
 =head2 checkOut(...)
 
@@ -323,6 +331,16 @@ success, undef in case of problems.
 In case of problem, you can call the error() method to get the STDOUT
 of the command.
 
+=head2 list()
+
+Returns an array reference containing all RCS files found in the RCS
+directory of this file 
+
+For instance, list will return ['foo','bar'] if the RCS subdir contains
+foo,v and bar,v.
+
+Returns undef in case of problem.
+
 
 =head1 AUTHOR
 
@@ -424,8 +442,9 @@ sub checkArchive
         carp "No revision parameter passed to checkArchive\n";
       }
 
-    my $rcsFile = -d $self->{workDir} . 'RCS' ? "RCS/" : '' ;
-    $rcsFile .= $self->{fullName}.',v' ;
+    $self->{rcsDir} = $self->{workDir} ;
+    $self->{rcsDir} .= -d $self->{workDir} . 'RCS' ? "RCS/" : '' ;
+    my $rcsFile = $self->{rcsDir}. $self->{fullName}.',v' ;
 
     $self->printDebug("checking archive of $self->{name} ($rcsFile)\n");
 
@@ -450,32 +469,39 @@ sub checkArchive
 
     return $run if $self->{test};
 
-    my $result = openPipe 
-      (
-       workDir => $self->{workDir}, 
-       trace => $self->{trace},
-       command => $run
-      );
+    local $_ ;
 
-    if (defined $result)
+    my $oldDir = cwd();
+
+    unless ( chdir ($self->{workDir}))
       {
-        foreach my $line (@$result)
+        $self->{lastError}="Can't cd to $args{workDir}:$!";
+        return undef;
+      } 
+
+    unless (open(FIN,"$run |") )
+      {
+        $self->{lastError}="open pipe $run failed:$!";
+        chdir $oldDir;
+        return undef;
+      }
+
+    while (<FIN>)
+      {
+        if (/^revision +([\d\.]+)\s+locked by: *(\w+)/)
           {
-            if ($line =~ /^revision +([\d\.]+)\s+locked by: *(\w+)/)
-              {
-                print "line is $line\nlocker $1, rev $2\n";
-                return [$1,$2,stat($self->{fullName})->mtime] 
-                  if $1 eq $args{revision};
-              };
-          }
-        return [undef,undef,stat($self->{fullName})->mtime];
-        
+            # print "line is $_\nlocker $2, rev $1\n";
+            chdir $oldDir;
+            return [$1,$2,stat($rcsFile)->mtime] 
+              if $1 eq $args{revision};
+          };
       }
-    else
-      {
-        $self->{lastError} = getError ;
-        return undef ;
-      }
+
+    close FIN;
+
+    chdir $oldDir;
+    return [undef,undef,stat($rcsFile)->mtime];
+
   }
 
 
@@ -501,7 +527,7 @@ sub changeLock
 
     return mySystem
       (
-       workDir => $args{workDir}, 
+       workDir => $self->{workDir}, 
        trace => $self->{trace},
        command => $run
       );
@@ -561,7 +587,7 @@ sub getHistory
 
     my $ret = openPipe
       (
-       workDir => $args{workDir}, 
+       workDir => $self->{workDir}, 
        trace => $self->{trace},
        command => $run
       );
@@ -597,7 +623,7 @@ sub showDiff
       (
        command => $cmd, 
        expect => {0 => 1, 256 => 1},
-       workDir => $args{workDir}, 
+       workDir => $self->{workDir}, 
        trace => $self->{trace}
       );
     
@@ -614,6 +640,18 @@ sub create
     $args{description} = 'no description given' 
       unless defined $args{description};
     chomp($args{description});
+
+    my $res = $self->checkArchive() unless defined $self->{rcsDir};
+
+    croak "Error: Can't create archive because the archive already exists" 
+      if defined $res;
+
+    if ($self->{rcsDir} eq $self->{workDir})
+      {    
+        $self->{rcsDir} .= 'RCS/';
+        $self->printDebug("Creating RCS directory $self->{rcsDir}\n");
+        mkdir($self->{rcsDir},0755) or die "Can't create $self->{rcsDir}";
+      }
 
     $self->printDebug("Creating RCS file for $self->{name} rev $args{revision}\n");
 
@@ -661,6 +699,40 @@ sub checkIn
 
     $self->{lastError} = getError unless defined $ret ;
     return $ret ;
+  }
+
+# returns the list of buddies in the same HMS directory
+sub list
+  {
+    my $self=shift ;
+    my %args = @_ ;
+    
+    $self->checkArchive(revision => undef) unless defined $self->{rcsDir};
+    $args{dir} = $self->{rcsDir} unless defined $args{dir};
+
+    unless (defined $args{dir})
+      {
+        $self->printDebug("list for $self->{name}: Undefined dir to list\n");
+        return $self->{test} ? '' : undef ;
+      }
+
+    $self->printDebug("Listing RCS dir $args{dir}\n");
+
+    opendir(DIR,$self->{rcsDir}) or die "Can't opendir $self->{rcsDir}";
+    
+    my %ret ;
+    foreach my $name (grep(s/,v$//,readdir(DIR)))
+      {
+        $ret{$name} = {
+                       revision => undef,
+                       locker => undef,
+                       time => stat($self->{rcsDir}.$name.',v')->mtime 
+                      };
+      }
+
+    close DIR;
+
+    return \%ret;
   }
 
 1;

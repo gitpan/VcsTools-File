@@ -30,6 +30,7 @@ use Test;
 use ExtUtils::testlib;
 use VcsTools::File;
 use VcsTools::LogParser ;
+use Cwd ;
 use VcsTools::DataSpec::HpTnd qw($description readHook);
 require Tk::ErrorDialog; 
 use Fcntl ;
@@ -69,9 +70,11 @@ my $ds = new VcsTools::LogParser
 print "ok ",$idx++,"\n";
 
 my $file = 'dummy.txt';
+my $dir = 'my_tnd/dir';
+my $origDir = cwd();
 
 warn "heavy cleanup\n" if $trace;
-system("rm -f dummy.txt; rm -rf .tiedHashes; futil -u -hhptnofs /test_integ/dummy.txt;echo y|futil -x -hhptnofs /test_integ/dummy.txt" );
+system("rm -rf my_tnd ; rm -rf .tiedHashes; futil -u -hhptnofs /test_integ/my_tnd/dir/dummy.txt;echo y|futil -x -hhptnofs /test_integ/my_tnd/dir/dummy.txt" );
 print "ok ",$idx++,"\n";
 
 my $how = $trace ? 'warn' : undef ;
@@ -87,10 +90,11 @@ my $vf = new VcsTools::File
    vcsArgs => 
    {
     hmsBase => 'test_integ',
+    hmsDir => $dir,
     hmsHost => 'hptnofs'
    },
    name => 'dummy.txt',
-   workDir => $ENV{'PWD'},
+   workDir => cwd().'/'.$dir,
    dataScanner => $ds ,
    trace => $trace,
    how => $how,
@@ -99,14 +103,18 @@ print "ok ",$idx++,"\n";
 
 my $res;
 
+chdir $dir or die "can't chdir $dir\n";
 open(FILE,">$file") || die "open file failed\n";
 print FILE "# \$Revision\$\nDummy text\n";
 close FILE ;
+chdir $origDir or die "can't chdir $origDir\n";
 print "ok ",$idx++,"\n";
 
 $res = $vf -> archiveFile();
 print "not " unless defined $res;
+chdir $dir or die "can't chdir $dir\n";
 print "not " if -w $file;
+chdir $origDir or die "can't chdir $origDir\n";
 print "ok ",$idx++,"\n";
 
 $res = $vf-> checkOut(revision => '1.1', lock => 1) ;
@@ -119,14 +127,18 @@ print "enot " unless defined $res && $res;
 print "ok ",$idx++,"\n";
 
 # working on 1.1
+chdir $dir or die "can't chdir $dir\n";
 open(FILE,">>$file") || die "open file failed\n";
 print FILE "Dummy text for 1.1 -> 1.2\n";
 close FILE ;
+chdir $origDir or die "can't chdir $origDir\n";
 print "ok ",$idx++,"\n";
 
 $res = $vf -> archiveFile(info =>{log => 'dummy log for 1.2'});
 print "not " unless defined $res;
+chdir $dir or die "can't chdir $dir\n";
 print "not " if -w $file;
+chdir $origDir or die "can't chdir $origDir\n";
 print "ok ",$idx++,"\n";
 
 $res = $vf-> checkError() ;
@@ -144,14 +156,18 @@ $res = $vf-> checkError() ;
 print "enot " unless defined $res && $res;
 print "ok ",$idx++,"\n";
 
+chdir $dir or die "can't chdir $dir\n";
 open(FILE,">>$file") || die "open file failed\n";
 print FILE "Dummy text for 1.1 -> 1.1.1.1\n";
 close FILE ;
+chdir $origDir or die "can't chdir $origDir\n";
 print "ok ",$idx++,"\n";
 
 $res = $vf -> archiveFile(info =>{log => 'dummy log for 1.1.1.1'});
 print "not " unless defined $res;
+chdir $dir or die "can't chdir $dir\n";
 print "not " if -w $file;
+chdir $origDir or die "can't chdir $origDir\n";
 print "ok ",$idx++,"\n";
 
 $res = $vf-> checkError() ;
@@ -159,7 +175,7 @@ print "not " unless defined $res && $res;
 print "ok ",$idx++,"\n";
 
 $res = $vf -> showDiff(rev1 => '1.1', rev2 => '1.2');
-print "not " unless "@$res" eq '/test_integ/dummy.txt[1.1] <  > [1.2] 1c1 < # $Revision: 1.1 $ --- > # $Revision: 1.2 $ 2a3 > Dummy text for 1.1 -> 1.2';
+print "not " unless "@$res" eq '/test_integ/my_tnd/dir/dummy.txt[1.1] <  > [1.2] 1c1 < # $Revision: 1.1 $ --- > # $Revision: 1.2 $ 2a3 > Dummy text for 1.1 -> 1.2';
 print "not " unless defined $res;
 print "ok ",$idx++,"\n";
 
@@ -167,6 +183,7 @@ $res = $vf -> writeRevContent(revision => '1.1', fileName => 'toto.txt');
 print "not " unless defined $res;
 print "ok ",$idx++,"\n";
 
+chdir $dir or die "can't chdir $dir\n";
 if (open(FIN,"toto.txt"))
   {
     my $str = join("",<FIN>);
@@ -176,6 +193,7 @@ else
   {
     print "not ";
   }
+chdir $origDir or die "can't chdir $origDir\n";
 print "ok ",$idx++,"\n";
 
 $res = $vf -> setUpMerge(ancestor => '1.1', below => '1.2', other => '1.1.1.1');
@@ -186,11 +204,15 @@ $res = $vf-> checkError() ;
 print "not " unless defined $res && $res;
 print "ok ",$idx++,"\n";
 
+chdir $dir or die "can't chdir $dir\n";
 print "not " unless (-e 'v1.1_dummy.txt' and -e 'v1.1.1.1_dummy.txt');
+chdir $origDir or die "can't chdir $origDir\n";
 print "ok ",$idx++,"\n";
 
 $res = $vf-> mergeCleanup() ;
+chdir $dir or die "can't chdir $dir\n";
 print "not " if (-e 'v1.1_dummy.txt' or -e 'v1.1.1.1_dummy.txt');
+chdir $origDir or die "can't chdir $origDir\n";
 print "ok ",$idx++,"\n";
 
 # emulate merge abort

@@ -2,13 +2,14 @@ package VcsTools::FileAgent ;
 
 use VcsTools::Process;
 use Carp;
+use File::Path;
 
 use strict;
 
 use vars qw($VERSION);
 use AutoLoader qw/AUTOLOAD/ ;
 
-$VERSION = sprintf "%d.%03d", q$Revision: 1.4 $ =~ /(\d+)\.(\d+)/;
+$VERSION = sprintf "%d.%03d", q$Revision: 1.5 $ =~ /(\d+)\.(\d+)/;
 
 sub new
   {
@@ -26,10 +27,13 @@ sub new
     $self->{trace} = $args{trace} || 0 ;
     $self->{workDir} .= '/' unless $self->{workDir} =~ m!/$! ;
 
-    die "directory $self->{workDir} does not exist\n" 
-      unless -d $self->{workDir};
+    unless (-d $self->{workDir})
+      {
+        mkpath($self->{workDir},0,0755) or 
+          die "can't create directory $self->{workDir}";
+      }
     
-    my $fullName = "/$self->{workDir}/$self->{name}" ;
+    my $fullName = "/$self->{workDir}$self->{name}" ;
     $fullName =~ s!//!/!g ;
     $self->{fullName}=$fullName ;
 
@@ -51,7 +55,7 @@ VcsTools::FileAgent - Perl class to handle a file
  my $agent = "VcsTools::FileAgent" ;
 
  my $fa = new $agent(name => 'test.txt',
-                     workDir => $ENV{'PWD'}.'/'.$dtest);
+                     workDir => $some_dir);
 
 
  $fa->writeFile(content => "dummy content\n") ;
@@ -94,7 +98,8 @@ trace: If set to 1, debug information are printed.
 
 =back
 
-Will create a FileAgent for file 'a_name' in directory 'workDir'.
+Will create a FileAgent for file 'a_name' in directory 'workDir'. Note that
+new will create the 'workDir' if it does not exist.
 
 =head1 Methods
 
@@ -156,7 +161,7 @@ the file lines
 =head2 getRevision()
 
 Will read the content of the file and return the revision number. Return 0
-of the $Revision: 1.4 $ keyword is present in the file but not set by the 
+of the $Revision: 1.5 $ keyword is present in the file but not set by the 
 VCS system.
 
 =head2 stat()

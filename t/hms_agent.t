@@ -6,10 +6,11 @@
 # Change 1..1 below to 1..last_test_to_print .
 # (It may become useful if the test is moved to ./t subdirectory.)
 
-BEGIN { $| = 1; print "1..14\n"; }
+BEGIN { $| = 1; print "1..19\n"; }
 END {print "not ok 1\n" unless $loaded;}
 use ExtUtils::testlib;
 use VcsTools::HmsAgent;
+use Cwd;
 $loaded = 1;
 my $idx = 1;
 print "ok ",$idx++,"\n";
@@ -33,7 +34,7 @@ my $h = new VcsTools::HmsAgent
    name => 'dummy.txt',
    trace => $trace,
    test => 1,
-   workDir => $ENV{'PWD'}
+   workDir => cwd()
   );
 
 print "ok ",$idx++,"\n";
@@ -111,6 +112,44 @@ print "ok ",$idx++,"\n";
 $res = $h -> create();
 warn $res,"\n" if $trace;
 print "not " 
-  unless $res eq 'fci -auto -hhptnofs -u /abase/adir/dummy.txt';
+  unless $res eq 'futil -M -hhptnofs /abase/adir
+fci -auto -hhptnofs -u /abase/adir/dummy.txt';
 print "ok ",$idx++,"\n";
 
+$res = $h -> mkHmsDir();
+warn $res,"\n" if $trace;
+print "not " 
+  unless $res eq "futil -M -hhptnofs /abase/adir\n";
+print "ok ",$idx++,"\n";
+
+$res = $h -> mkHmsDir(hmsDir => 'a/dummy//dir/');
+warn $res,"\n" if $trace;
+print "not " 
+  unless $res eq 'futil -M -hhptnofs /abase/a
+futil -M -hhptnofs /abase/a/dummy
+futil -M -hhptnofs /abase/a/dummy/dir
+';
+print "ok ",$idx++,"\n";
+
+$res = $h -> mkHmsDir(hmsHost => 'moon', hmsBase => 'alpha',
+                      hmsDir => 'a/dummy//dir/');
+warn $res,"\n" if $trace;
+print "not " 
+  unless $res eq 'futil -M -hmoon /alpha/a
+futil -M -hmoon /alpha/a/dummy
+futil -M -hmoon /alpha/a/dummy/dir
+';
+print "ok ",$idx++,"\n";
+
+$res = $h -> list() ;
+warn $res,"\n" if $trace;
+print "not " 
+  unless $res eq 'fll -RN -hhptnofs /abase/adir';
+print "ok ",$idx++,"\n";
+
+$res = $h -> list(hmsHost => 'moon', hmsBase => 'alpha',
+                  hmsDir => 'a/dummy//dir/') ;
+warn $res,"\n" if $trace;
+print "not " 
+  unless $res eq 'fll -RN -hmoon /alpha/a/dummy//dir/';
+print "ok ",$idx++,"\n";
